@@ -101,6 +101,7 @@ async def create_gateway(
     data["organization_id"] = ctx.organization.id
     gateway = await crud.create(session, Gateway, **data)
     await service.ensure_main_agent(gateway, auth, action="provision")
+    await service.sync_agents_from_gateway(gateway)
     return gateway
 
 
@@ -142,7 +143,24 @@ async def update_gateway(
             await service.assert_gateway_runtime_compatible(url=next_url, token=next_token)
     await crud.patch(session, gateway, updates)
     await service.ensure_main_agent(gateway, auth, action="update")
+    await service.sync_agents_from_gateway(gateway)
     return gateway
+
+
+@router.post("/{gateway_id}/agents/sync")
+async def sync_gateway_agents(
+    gateway_id: UUID,
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> dict:
+    """Discover agents on the gateway and sync them into Mission Control."""
+    service = GatewayAdminLifecycleService(session)
+    gateway = await service.require_gateway(
+        gateway_id=gateway_id,
+        organization_id=ctx.organization.id,
+    )
+    result = await service.sync_agents_from_gateway(gateway)
+    return result.to_dict()
 
 
 @router.post("/{gateway_id}/templates/sync", response_model=GatewayTemplatesSyncResult)

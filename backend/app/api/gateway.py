@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query
 
@@ -20,6 +20,7 @@ from app.schemas.gateway_api import (
     GatewaysStatusResponse,
 )
 from app.services.openclaw.gateway_rpc import GATEWAY_EVENTS, GATEWAY_METHODS, PROTOCOL_VERSION
+from app.services.openclaw.session_completion_monitor import SessionCompletionMonitor
 from app.services.openclaw.session_service import GatewaySessionService
 from app.services.organizations import OrganizationContext
 
@@ -146,3 +147,18 @@ async def gateway_commands(
         methods=GATEWAY_METHODS,
         events=GATEWAY_EVENTS,
     )
+
+
+@router.post("/sessions/scan-completions", response_model=dict)
+async def scan_session_completions(
+    session: "AsyncSession" = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> dict[str, Any]:
+    """Scan all in_progress tasks for TASK_COMPLETE/BLOCKED/QUESTION signals.
+
+    Phase 1 completion detection: polls each assigned agent's session history
+    and updates task status accordingly.
+    """
+    monitor = SessionCompletionMonitor(session)
+    return await monitor.scan_active_tasks(organization_id=ctx.organization.id)

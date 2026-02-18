@@ -30,7 +30,7 @@ from app.services.openclaw.db_service import OpenClawDBService
 from app.services.openclaw.gateway_compat import check_gateway_runtime_compatibility
 from app.services.openclaw.gateway_rpc import GatewayConfig as GatewayClientConfig
 from app.services.openclaw.gateway_rpc import OpenClawGatewayError, openclaw_call
-from app.services.openclaw.provisioning import OpenClawGatewayProvisioner
+from app.services.openclaw.provisioning import OpenClawGatewayControlPlane, OpenClawGatewayProvisioner
 from app.services.openclaw.provisioning_db import (
     GatewayTemplateSyncOptions,
     OpenClawProvisioningService,
@@ -38,6 +38,31 @@ from app.services.openclaw.provisioning_db import (
 from app.services.openclaw.session_service import GatewayTemplateSyncQuery
 from app.services.openclaw.shared import GatewayAgentIdentity
 from app.services.organizations import get_org_owner_user
+
+# ---------------------------------------------------------------------------
+# Agent sync result schema
+# ---------------------------------------------------------------------------
+
+
+class AgentSyncResult:
+    """Simple container returned by sync_agents_from_gateway."""
+
+    __slots__ = ("created", "updated", "unchanged", "errors")
+
+    def __init__(self) -> None:
+        self.created: int = 0
+        self.updated: int = 0
+        self.unchanged: int = 0
+        self.errors: list[str] = []
+
+    def to_dict(self) -> dict:
+        return {
+            "created": self.created,
+            "updated": self.updated,
+            "unchanged": self.unchanged,
+            "total": self.created + self.updated + self.unchanged,
+            "errors": self.errors,
+        }
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -349,6 +374,149 @@ class GatewayAdminLifecycleService(OpenClawDBService):
             updated_at=now,
             commit=False,
         )
+
+    async def sync_agents_from_gateway(self, gateway: Gateway) -> AgentSyncResult:
+        """Discover agents on the gateway via RPC and upsert them into MC."""
+        result = AgentSyncResult()
+        if not gateway.url:
+            result.errors.append("Gateway has no URL configured")
+            return result
+
+        config = GatewayClientConfig(url=gateway.url, token=gateway.token)
+        try:
+            agents_data = await openclaw_call("agents.list", {}, config=config)
+        except OpenClawGatewayError as exc:
+            result.errors.append(f"agents.list RPC failed: {exc}")
+            return result
+
+        # Response can be a dict with an "agents" key or a flat list.
+        agents_list: list[dict] | None = None
+        default_id: str | None = None
+        if isinstance(agents_data, dict):
+            agents_list = agents_data.get("agents")
+            default_id = agents_data.get("defaultId")
+        elif isinstance(agents_data, list):
+            agents_list = agents_data
+
+        if not isinstance(agents_list, list):
+            result.errors.append("agents.list returned unexpected format")
+            return result
+
+        now = utcnow()
+        existing_agents = await Agent.objects.filter_by(
+            gateway_id=gateway.id,
+        ).all(self.session)
+        existing_by_session = {a.openclaw_session_id: a for a in existing_agents if a.openclaw_session_id}
+        existing_by_name = {a.name: a for a in existing_agents}
+
+        control_plane = OpenClawGatewayControlPlane(config)
+
+        for entry in agents_list:
+            if not isinstance(entry, dict):
+                continue
+            openclaw_id = entry.get("id", "")
+            identity = entry.get("identity") or {}
+            name = identity.get("name") or entry.get("name") or ""
+            emoji = identity.get("emoji", "")
+            is_default = openclaw_id == default_id
+            session_key = f"agent:{openclaw_id}:main"
+
+            # For agents without identity in config, try reading IDENTITY.md
+            if not name or name == openclaw_id:
+                try:
+                    id_payload = await control_plane.get_agent_file_payload(
+                        agent_id=openclaw_id, name="IDENTITY.md",
+                    )
+                    if isinstance(id_payload, dict):
+                        file_data = id_payload.get("file") or id_payload
+                        id_content = (
+                            file_data.get("content", "")
+                            if isinstance(file_data, dict)
+                            else str(id_payload)
+                        )
+                    else:
+                        id_content = str(id_payload) if id_payload else ""
+                    for line in id_content.splitlines():
+                        stripped = line.strip().lower()
+                        # Match patterns like "Name: X", "- Name: X",
+                        # "- **Name:** X", "**Name:** X"
+                        if "name" in stripped and ":" in stripped:
+                            # Extract value after the colon following "name"
+                            idx = stripped.index("name")
+                            rest = line.strip()[idx:]
+                            colon_idx = rest.find(":")
+                            if colon_idx >= 0:
+                                parsed = rest[colon_idx + 1:].strip().strip("*").strip()
+                                if parsed:
+                                    name = parsed
+                                    break
+                except (OpenClawGatewayError, Exception):
+                    pass
+            if not name:
+                name = openclaw_id
+
+            # Skip the MC gateway agent -- it's managed by ensure_main_agent
+            if openclaw_id.startswith("mc-gateway-"):
+                result.unchanged += 1
+                continue
+
+            # Try to find existing agent by session key first, then name
+            agent = existing_by_session.get(session_key) or existing_by_name.get(name)
+
+            if agent is not None:
+                # Update if anything changed
+                changed = False
+                if agent.name != name:
+                    agent.name = name
+                    changed = True
+                if agent.openclaw_session_id != session_key:
+                    agent.openclaw_session_id = session_key
+                    changed = True
+                if agent.status in ("provisioning", ""):
+                    agent.status = "online"
+                    changed = True
+                # Merge identity profile
+                profile = agent.identity_profile or {}
+                if emoji and profile.get("emoji") != emoji:
+                    profile["emoji"] = emoji
+                    agent.identity_profile = profile
+                    changed = True
+                if changed:
+                    agent.updated_at = now
+                    self.session.add(agent)
+                    result.updated += 1
+                else:
+                    result.unchanged += 1
+            else:
+                # Create new agent record
+                profile = {}
+                if emoji:
+                    profile["emoji"] = emoji
+                if is_default:
+                    profile["role"] = "Primary Assistant"
+                agent = Agent(
+                    name=name,
+                    status="online",
+                    board_id=None,
+                    gateway_id=gateway.id,
+                    is_board_lead=False,
+                    openclaw_session_id=session_key,
+                    heartbeat_config=DEFAULT_HEARTBEAT_CONFIG.copy(),
+                    identity_profile=profile or None,
+                    last_seen_at=now,
+                )
+                self.session.add(agent)
+                result.created += 1
+
+        await self.session.commit()
+        self.logger.info(
+            "gateway.agents.sync.done gateway_id=%s created=%d updated=%d unchanged=%d",
+            gateway.id,
+            result.created,
+            result.updated,
+            result.unchanged,
+        )
+        return result
 
     async def sync_templates(
         self,
