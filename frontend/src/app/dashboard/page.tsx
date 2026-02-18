@@ -437,8 +437,8 @@ export default function DashboardPage() {
       <SignedIn>
         <DashboardSidebar />
         <main className="flex-1 overflow-y-auto bg-slate-50">
-          <div className="border-b border-slate-200 bg-white px-8 py-6">
-            <div className="flex items-center justify-between gap-4">
+          <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="font-heading text-2xl font-semibold text-slate-900 tracking-tight">
                   Dashboard
@@ -460,7 +460,7 @@ export default function DashboardPage() {
                   ariaLabel="Dashboard date range"
                   placeholder="Select range"
                   searchEnabled={false}
-                  triggerClassName="h-9 min-w-[150px] rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  triggerClassName="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:min-w-[150px] sm:w-auto"
                   contentClassName="rounded-lg border border-slate-200"
                 />
                 <DropdownSelect
@@ -490,7 +490,7 @@ export default function DashboardPage() {
                   options={boardGroupOptions}
                   ariaLabel="Dashboard board group filter"
                   placeholder="All groups"
-                  triggerClassName="h-9 min-w-[170px] rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  triggerClassName="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:min-w-[170px] sm:w-auto"
                   contentClassName="rounded-lg border border-slate-200"
                   searchEnabled={false}
                   disabled={boardGroupsQuery.isLoading}
@@ -511,7 +511,7 @@ export default function DashboardPage() {
                   options={boardOptions}
                   ariaLabel="Dashboard board filter"
                   placeholder="All boards"
-                  triggerClassName="h-9 min-w-[170px] rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  triggerClassName="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:min-w-[170px] sm:w-auto"
                   contentClassName="rounded-lg border border-slate-200"
                   searchEnabled={false}
                   disabled={boardsQuery.isLoading || boardOptions.length <= 1}
@@ -535,7 +535,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-          <div className="p-8">
+          <div className="p-4 sm:p-6 md:p-8">
             {metricsQuery.error ? (
               <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
                 {metricsQuery.error.message}

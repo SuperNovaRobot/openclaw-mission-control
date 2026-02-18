@@ -32,7 +32,7 @@ export function ActivityFeed<TItem extends FeedItem>({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-10">
         <p className="text-sm font-medium text-slate-900">
           Waiting for new activity…
         </p>

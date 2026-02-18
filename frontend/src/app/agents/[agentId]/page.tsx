@@ -148,7 +148,7 @@ export default function AgentDetailPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl surface-panel p-10 text-center">
+        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl surface-panel p-6 text-center sm:p-10">
           <p className="text-sm text-muted">Sign in to view agents.</p>
           <SignInButton
             mode="modal"
@@ -162,13 +162,13 @@ export default function AgentDetailPage() {
       <SignedIn>
         <DashboardSidebar />
         {!isAdmin ? (
-          <div className="flex h-full flex-col gap-6 rounded-2xl surface-panel p-8">
-            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-6 py-5 text-sm text-muted">
+          <div className="flex h-full flex-col gap-6 rounded-2xl surface-panel p-4 sm:p-6 md:p-8">
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-4 text-sm text-muted sm:px-6 sm:py-5">
               Only organization owners and admins can access agents.
             </div>
           </div>
         ) : (
-          <div className="flex h-full flex-col gap-6 rounded-2xl surface-panel p-8">
+          <div className="flex h-full flex-col gap-6 rounded-2xl surface-panel p-4 sm:p-6 md:p-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-quiet">

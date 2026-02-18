@@ -744,7 +744,7 @@ export default function BoardGroupDetailPage() {
         <DashboardSidebar />
         <main className="flex-1 overflow-y-auto bg-slate-50">
           <div className="sticky top-0 z-30 border-b border-slate-200 bg-white shadow-sm">
-            <div className="px-8 py-6">
+            <div className="px-4 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -948,7 +948,7 @@ export default function BoardGroupDetailPage() {
             </div>
           </div>
 
-          <div className="p-8">
+          <div className="p-4 sm:p-6 md:p-8">
             <div className="space-y-6">
               {heartbeatApplyError ? (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-sm">

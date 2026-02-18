@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -15,6 +16,7 @@ import {
   Settings,
   Store,
   Tags,
+  X,
 } from "lucide-react";
 
 import { useAuth } from "@/auth/clerk";
@@ -25,11 +27,13 @@ import {
   useHealthzHealthzGet,
 } from "@/api/generated/default/default";
 import { cn } from "@/lib/utils";
+import { useMobileSidebar } from "@/components/templates/DashboardShell";
 
 export function DashboardSidebar() {
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
+  const { isOpen, close } = useMobileSidebar();
   const healthQuery = useHealthzHealthzGet<healthzHealthzGetResponse, ApiError>(
     {
       query: {
@@ -57,10 +61,37 @@ export function DashboardSidebar() {
         ? "System status unavailable"
         : "System degraded";
 
-  return (
-    <aside className="flex h-full w-64 flex-col border-r border-slate-200 bg-white">
+  // Lock body scroll when sidebar open on mobile
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
+  const sidebarContent = (
+    <>
       <div className="flex-1 px-3 py-4">
-        <p className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        {/* Mobile close button */}
+        <div className="mb-2 flex items-center justify-between md:hidden">
+          <p className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Navigation
+          </p>
+          <button
+            type="button"
+            onClick={close}
+            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+            aria-label="Close navigation"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {/* Desktop label */}
+        <p className="hidden px-3 text-xs font-semibold uppercase tracking-wider text-slate-500 md:block">
           Navigation
         </p>
         <nav className="mt-3 space-y-4 text-sm">
@@ -71,6 +102,7 @@ export function DashboardSidebar() {
             <div className="mt-1 space-y-1">
               <Link
                 href="/dashboard"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname === "/dashboard"
@@ -83,6 +115,7 @@ export function DashboardSidebar() {
               </Link>
               <Link
                 href="/activity"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname.startsWith("/activity")
@@ -103,6 +136,7 @@ export function DashboardSidebar() {
             <div className="mt-1 space-y-1">
               <Link
                 href="/board-groups"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname.startsWith("/board-groups")
@@ -115,6 +149,7 @@ export function DashboardSidebar() {
               </Link>
               <Link
                 href="/boards"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname.startsWith("/boards")
@@ -127,6 +162,7 @@ export function DashboardSidebar() {
               </Link>
               <Link
                 href="/tags"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname.startsWith("/tags")
@@ -139,6 +175,7 @@ export function DashboardSidebar() {
               </Link>
               <Link
                 href="/approvals"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname.startsWith("/approvals")
@@ -152,6 +189,7 @@ export function DashboardSidebar() {
               {isAdmin ? (
                 <Link
                   href="/custom-fields"
+                  onClick={close}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                     pathname.startsWith("/custom-fields")
@@ -175,6 +213,7 @@ export function DashboardSidebar() {
                 <div className="mt-1 space-y-1">
                   <Link
                     href="/skills/marketplace"
+                    onClick={close}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                       pathname === "/skills" ||
@@ -188,6 +227,7 @@ export function DashboardSidebar() {
                   </Link>
                   <Link
                     href="/skills/packs"
+                    onClick={close}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                       pathname.startsWith("/skills/packs")
@@ -210,6 +250,7 @@ export function DashboardSidebar() {
             <div className="mt-1 space-y-1">
               <Link
                 href="/organization"
+                onClick={close}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                   pathname.startsWith("/organization")
@@ -223,6 +264,7 @@ export function DashboardSidebar() {
               {isAdmin ? (
                 <Link
                   href="/gateways"
+                  onClick={close}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                     pathname.startsWith("/gateways")
@@ -237,6 +279,7 @@ export function DashboardSidebar() {
               {isAdmin ? (
                 <Link
                   href="/agents"
+                  onClick={close}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition",
                     pathname.startsWith("/agents")
@@ -265,6 +308,31 @@ export function DashboardSidebar() {
           {statusLabel}
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar - always visible */}
+      <aside className="hidden h-full w-64 flex-col border-r border-slate-200 bg-white md:flex">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile sidebar - overlay */}
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50 bg-black/40 md:hidden"
+            onClick={close}
+            aria-hidden="true"
+          />
+          {/* Slide-in sidebar */}
+          <aside className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white shadow-xl md:hidden">
+            {sidebarContent}
+          </aside>
+        </>
+      )}
+    </>
   );
 }

@@ -2983,7 +2983,7 @@ export default function BoardDetailPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl surface-panel p-10 text-center">
+        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl surface-panel p-6 text-center sm:p-10">
           <p className="text-sm text-muted">Sign in to view boards.</p>
           <SignInButton
             mode="modal"
@@ -3003,10 +3003,10 @@ export default function BoardDetailPage() {
           )}
         >
           <div className="sticky top-0 z-30 border-b border-slate-200 bg-white shadow-sm">
-            <div className="px-8 py-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="px-4 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div>
-                  <h1 className="mt-2 text-2xl font-semibold text-slate-900 tracking-tight">
+                  <h1 className="mt-2 text-xl font-semibold text-slate-900 tracking-tight sm:text-2xl">
                     {board?.name ?? "Board"}
                   </h1>
                   <p className="mt-1 text-sm text-slate-500">
@@ -3582,7 +3582,7 @@ export default function BoardDetailPage() {
       ) : null}
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-[max(760px,45vw)] max-w-[99vw] transform bg-white shadow-2xl transition-transform",
+          "fixed right-0 top-0 z-50 h-full w-full transform bg-white shadow-2xl transition-transform sm:w-[max(760px,45vw)] sm:max-w-[99vw]",
           isDetailOpen ? "transform-none" : "translate-x-full",
         )}
       >
@@ -3894,7 +3894,7 @@ export default function BoardDetailPage() {
 
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-[560px] max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform",
+          "fixed right-0 top-0 z-50 h-full w-full transform border-l border-slate-200 bg-white shadow-2xl transition-transform sm:w-[560px] sm:max-w-[96vw]",
           isChatOpen ? "transform-none" : "translate-x-full",
         )}
       >
@@ -3956,7 +3956,7 @@ export default function BoardDetailPage() {
 
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-[520px] max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform",
+          "fixed right-0 top-0 z-50 h-full w-full transform border-l border-slate-200 bg-white shadow-2xl transition-transform sm:w-[520px] sm:max-w-[96vw]",
           isLiveFeedOpen ? "transform-none" : "translate-x-full",
         )}
       >

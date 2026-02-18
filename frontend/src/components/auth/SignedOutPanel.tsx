@@ -20,8 +20,8 @@ export function SignedOutPanel({
   buttonTestId,
 }: SignedOutPanelProps) {
   return (
-    <div className="col-span-2 flex min-h-[calc(100vh-64px)] items-center justify-center bg-slate-50 p-10 text-center">
-      <div className="rounded-xl border border-slate-200 bg-white px-8 py-6 shadow-sm">
+    <div className="col-span-2 flex min-h-[calc(100vh-64px)] items-center justify-center bg-slate-50 p-4 text-center sm:p-10">
+      <div className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-8 sm:py-6">
         <p className="text-sm text-slate-600">{message}</p>
         <SignInButton
           mode={mode}
