@@ -34,6 +34,7 @@ import type {
 } from "@/api/generated/model";
 import { Markdown } from "@/components/atoms/Markdown";
 import { StatusPill } from "@/components/atoms/StatusPill";
+import { AgentFileEditor } from "@/components/organisms/AgentFileEditor";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 export default function AgentDetailPage() {
   const { isSignedIn } = useAuth();
@@ -215,151 +222,162 @@ export default function AgentDetailPage() {
                 Loading agent details…
               </div>
             ) : agent ? (
-              <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="space-y-6">
-                  <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Overview
-                        </p>
-                        <p className="mt-1 text-lg font-semibold text-strong">
-                          {agent.name}
-                        </p>
+              <Tabs defaultValue="overview">
+                <TabsList>
+                  <TabsTrigger value="overview">Overview</TabsTrigger>
+                  <TabsTrigger value="files">Files</TabsTrigger>
+                </TabsList>
+                <TabsContent value="overview">
+                  <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+                    <div className="space-y-6">
+                      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Overview
+                            </p>
+                            <p className="mt-1 text-lg font-semibold text-strong">
+                              {agent.name}
+                            </p>
+                          </div>
+                          <StatusPill status={agentStatus} />
+                        </div>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Agent ID
+                            </p>
+                            <p className="mt-1 text-sm text-muted">{agent.id}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Session key
+                            </p>
+                            <p className="mt-1 text-sm text-muted">
+                              {agent.openclaw_session_id ?? "—"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Board
+                            </p>
+                            {agent.is_gateway_main ? (
+                              <p className="mt-1 text-sm text-strong">
+                                Gateway main (no board)
+                              </p>
+                            ) : linkedBoard ? (
+                              <Link
+                                href={`/boards/${linkedBoard.id}`}
+                                className="mt-1 inline-flex text-sm font-medium text-[color:var(--accent)] transition hover:underline"
+                              >
+                                {linkedBoard.name}
+                              </Link>
+                            ) : (
+                              <p className="mt-1 text-sm text-strong">—</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Last seen
+                            </p>
+                            <p className="mt-1 text-sm text-strong">
+                              {formatRelative(agent.last_seen_at)}
+                            </p>
+                            <p className="text-xs text-quiet">
+                              {formatTimestamp(agent.last_seen_at)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Updated
+                            </p>
+                            <p className="mt-1 text-sm text-muted">
+                              {formatTimestamp(agent.updated_at)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Created
+                            </p>
+                            <p className="mt-1 text-sm text-muted">
+                              {formatTimestamp(agent.created_at)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <StatusPill status={agentStatus} />
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Agent ID
-                        </p>
-                        <p className="mt-1 text-sm text-muted">{agent.id}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Session key
-                        </p>
-                        <p className="mt-1 text-sm text-muted">
-                          {agent.openclaw_session_id ?? "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Board
-                        </p>
-                        {agent.is_gateway_main ? (
-                          <p className="mt-1 text-sm text-strong">
-                            Gateway main (no board)
+
+                      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                            Health
                           </p>
-                        ) : linkedBoard ? (
-                          <Link
-                            href={`/boards/${linkedBoard.id}`}
-                            className="mt-1 inline-flex text-sm font-medium text-[color:var(--accent)] transition hover:underline"
-                          >
-                            {linkedBoard.name}
-                          </Link>
-                        ) : (
-                          <p className="mt-1 text-sm text-strong">—</p>
-                        )}
+                          <StatusPill status={agentStatus} />
+                        </div>
+                        <div className="mt-4 grid gap-3 text-sm text-muted">
+                          <div className="flex items-center justify-between">
+                            <span>Heartbeat window</span>
+                            <span>{formatRelative(agent.last_seen_at)}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>Session binding</span>
+                            <span>
+                              {agent.openclaw_session_id ? "Bound" : "Unbound"}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>Status</span>
+                            <span className="text-strong">{agentStatus}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div>
+                    </div>
+
+                    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-5">
+                      <div className="mb-4 flex items-center justify-between">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Last seen
-                        </p>
-                        <p className="mt-1 text-sm text-strong">
-                          {formatRelative(agent.last_seen_at)}
+                          Activity
                         </p>
                         <p className="text-xs text-quiet">
-                          {formatTimestamp(agent.last_seen_at)}
+                          {agentEvents.length} events
                         </p>
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Updated
-                        </p>
-                        <p className="mt-1 text-sm text-muted">
-                          {formatTimestamp(agent.updated_at)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Created
-                        </p>
-                        <p className="mt-1 text-sm text-muted">
-                          {formatTimestamp(agent.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                        Health
-                      </p>
-                      <StatusPill status={agentStatus} />
-                    </div>
-                    <div className="mt-4 grid gap-3 text-sm text-muted">
-                      <div className="flex items-center justify-between">
-                        <span>Heartbeat window</span>
-                        <span>{formatRelative(agent.last_seen_at)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Session binding</span>
-                        <span>
-                          {agent.openclaw_session_id ? "Bound" : "Unbound"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Status</span>
-                        <span className="text-strong">{agentStatus}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-5">
-                  <div className="mb-4 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                      Activity
-                    </p>
-                    <p className="text-xs text-quiet">
-                      {agentEvents.length} events
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    {agentEvents.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-muted">
-                        No activity yet for this agent.
-                      </div>
-                    ) : (
-                      agentEvents.map((event) => (
-                        <div
-                          key={event.id}
-                          className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-muted"
-                        >
-                          {event.message?.trim() ? (
-                            <div className="select-text cursor-text leading-relaxed text-strong break-words">
-                              <Markdown
-                                content={event.message}
-                                variant="comment"
-                              />
+                      <div className="space-y-3">
+                        {agentEvents.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-muted">
+                            No activity yet for this agent.
+                          </div>
+                        ) : (
+                          agentEvents.map((event) => (
+                            <div
+                              key={event.id}
+                              className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-muted"
+                            >
+                              {event.message?.trim() ? (
+                                <div className="select-text cursor-text leading-relaxed text-strong break-words">
+                                  <Markdown
+                                    content={event.message}
+                                    variant="comment"
+                                  />
+                                </div>
+                              ) : (
+                                <p className="font-medium text-strong">
+                                  {event.event_type}
+                                </p>
+                              )}
+                              <p className="mt-1 text-xs text-quiet">
+                                {formatTimestamp(event.created_at)}
+                              </p>
                             </div>
-                          ) : (
-                            <p className="font-medium text-strong">
-                              {event.event_type}
-                            </p>
-                          )}
-                          <p className="mt-1 text-xs text-quiet">
-                            {formatTimestamp(event.created_at)}
-                          </p>
-                        </div>
-                      ))
-                    )}
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </TabsContent>
+                <TabsContent value="files">
+                  <AgentFileEditor agentId={agent.id} />
+                </TabsContent>
+              </Tabs>
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted">
                 Agent not found.

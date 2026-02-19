@@ -12,6 +12,7 @@ from fastapi_pagination import add_pagination
 
 from app.api.activity import router as activity_router
 from app.api.agent import router as agent_router
+from app.api.agent_files import router as agent_files_router
 from app.api.agents import router as agents_router
 from app.api.approvals import router as approvals_router
 from app.api.auth import router as auth_router
@@ -524,6 +525,7 @@ def readyz() -> HealthStatusResponse:
 api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(auth_router)
 api_v1.include_router(agent_router)
+api_v1.include_router(agent_files_router)
 api_v1.include_router(agents_router)
 api_v1.include_router(activity_router)
 api_v1.include_router(gateway_router)
