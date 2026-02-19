@@ -42,6 +42,7 @@ type AgentsTableProps = {
   emptyMessage?: string;
   emptyState?: AgentsTableEmptyState;
   onDelete?: (agent: AgentRead) => void;
+  onResetWake?: (agent: AgentRead) => void;
 };
 
 const DEFAULT_EMPTY_ICON = (
@@ -75,6 +76,7 @@ export function AgentsTable({
   emptyMessage = "No agents found.",
   emptyState,
   onDelete,
+  onResetWake,
 }: AgentsTableProps) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([
     { id: "name", desc: false },
@@ -181,8 +183,31 @@ export function AgentsTable({
       rowActions={
         showActions
           ? {
-              getEditHref: (agent) => `/agents/${agent.id}/edit`,
-              onDelete,
+              actions: [
+                ...(onResetWake
+                  ? [
+                      {
+                        key: "reset-wake",
+                        label: "Reset & Wake",
+                        onClick: onResetWake,
+                      },
+                    ]
+                  : []),
+                {
+                  key: "edit",
+                  label: "Edit",
+                  href: (agent: AgentRead) => `/agents/${agent.id}/edit`,
+                },
+                ...(onDelete
+                  ? [
+                      {
+                        key: "delete",
+                        label: "Delete",
+                        onClick: onDelete,
+                      },
+                    ]
+                  : []),
+              ],
             }
           : undefined
       }

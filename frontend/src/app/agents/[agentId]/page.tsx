@@ -2,13 +2,14 @@
 
 export const dynamic = "force-dynamic";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { SignInButton, SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import {
   type getAgentApiV1AgentsAgentIdGetResponse,
   useDeleteAgentApiV1AgentsAgentIdDelete,
@@ -47,16 +48,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
 
+type ModelInfo = { id: string; name: string | null; aliases: string[] };
+
 export default function AgentDetailPage() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const queryClient = useQueryClient();
   const agentIdParam = params?.agentId;
   const agentId = Array.isArray(agentIdParam) ? agentIdParam[0] : agentIdParam;
 
@@ -64,6 +75,8 @@ export default function AgentDetailPage() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [resetStatus, setResetStatus] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("__default__");
 
   const agentQuery = useGetAgentApiV1AgentsAgentIdGet<
     getAgentApiV1AgentsAgentIdGetResponse,
@@ -135,6 +148,74 @@ export default function AgentDetailPage() {
     },
   });
 
+  // --- Reset & Wake ---
+  const resetMutation = useMutation({
+    mutationFn: async () =>
+      customFetch<{ data: { ok: boolean; message: string }; status: number }>(
+        `/api/v1/agents/${agentId}/reset-and-wake`,
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      setResetStatus("Agent reset and wake sent.");
+      agentQuery.refetch();
+      setTimeout(() => setResetStatus(null), 4000);
+    },
+    onError: (err: Error) => {
+      setResetStatus(`Error: ${err.message || "Reset failed."}`);
+      setTimeout(() => setResetStatus(null), 6000);
+    },
+  });
+
+  // --- Model selector ---
+  const modelsQuery = useQuery<ModelInfo[]>({
+    queryKey: ["available-models"],
+    queryFn: async () => {
+      const res = await customFetch<{
+        data: { models: ModelInfo[] };
+        status: number;
+      }>("/api/v1/agents/available-models", { method: "GET" });
+      return res.data.models;
+    },
+    enabled: Boolean(isSignedIn && isAdmin),
+    staleTime: 120_000,
+    retry: false,
+  });
+  const availableModels = modelsQuery.data ?? [];
+
+  // Fetch current model override from gateway config
+  const currentModelQuery = useQuery<string | null>({
+    queryKey: ["agent-model", agentId],
+    queryFn: async () => {
+      const res = await customFetch<{
+        data: { ok: boolean; model: string | null };
+        status: number;
+      }>(`/api/v1/agents/${agentId}/model`, { method: "GET" });
+      return res.data.model;
+    },
+    enabled: Boolean(isSignedIn && isAdmin && agentId),
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  // Sync selectedModel with fetched value on load
+  useEffect(() => {
+    if (currentModelQuery.isSuccess && currentModelQuery.data) {
+      setSelectedModel(currentModelQuery.data);
+    }
+  }, [currentModelQuery.isSuccess, currentModelQuery.data]);
+
+  const modelMutation = useMutation({
+    mutationFn: async (model: string | null) =>
+      customFetch<{ data: { ok: boolean; model: string | null }; status: number }>(
+        `/api/v1/agents/${agentId}/model`,
+        { method: "POST", body: JSON.stringify({ model }) },
+      ),
+    onSuccess: () => {
+      agentQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["agent-model", agentId] });
+    },
+  });
+
   const isLoading =
     agentQuery.isLoading || activityQuery.isLoading || boardsQuery.isLoading;
   const error =
@@ -196,6 +277,15 @@ export default function AgentDetailPage() {
                   Back to agents
                 </Button>
                 {agent ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => resetMutation.mutate()}
+                    disabled={resetMutation.isPending}
+                  >
+                    {resetMutation.isPending ? "Resetting…" : "Reset & Wake"}
+                  </Button>
+                ) : null}
+                {agent ? (
                   <Link
                     href={`/agents/${agent.id}/edit`}
                     className="inline-flex h-10 items-center justify-center rounded-xl border border-[color:var(--border)] px-4 text-sm font-semibold text-muted transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
@@ -210,6 +300,12 @@ export default function AgentDetailPage() {
                 ) : null}
               </div>
             </div>
+
+            {resetStatus ? (
+              <div className={`rounded-lg border px-3 py-2 text-xs ${resetStatus.startsWith("Error") ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                {resetStatus}
+              </div>
+            ) : null}
 
             {error ? (
               <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-3 text-xs text-muted">
@@ -302,6 +398,38 @@ export default function AgentDetailPage() {
                             <p className="mt-1 text-sm text-muted">
                               {formatTimestamp(agent.created_at)}
                             </p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                              Model
+                            </p>
+                            <div className="mt-1 flex items-center gap-2">
+                              <Select
+                                value={selectedModel}
+                                onValueChange={(value) => {
+                                  setSelectedModel(value);
+                                  modelMutation.mutate(value === "__default__" ? null : value);
+                                }}
+                                disabled={modelMutation.isPending || modelsQuery.isLoading}
+                              >
+                                <SelectTrigger className="h-9 w-64 text-sm">
+                                  <SelectValue placeholder="Loading models…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__default__">
+                                    Default (gateway setting)
+                                  </SelectItem>
+                                  {availableModels.map((m) => (
+                                    <SelectItem key={m.id} value={m.id}>
+                                      {m.name || m.id}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {modelMutation.isPending ? (
+                                <span className="text-xs text-muted">Saving…</span>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       </div>

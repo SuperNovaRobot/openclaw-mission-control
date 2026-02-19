@@ -38,6 +38,7 @@ services:
       RQ_REDIS_URL: redis://localhost:6379/0
     volumes:
       - device_keys:/app/app/services/openclaw/.device-keys
+      - /home/clawdbot/.openclaw/openclaw.json:/openclaw-config.json
     depends_on:
       db:
         condition: service_healthy

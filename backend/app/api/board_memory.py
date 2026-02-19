@@ -27,9 +27,16 @@ from app.models.agents import Agent
 from app.models.board_memory import BoardMemory
 from app.schemas.board_memory import BoardMemoryCreate, BoardMemoryRead
 from app.schemas.pagination import DefaultLimitOffsetPage
+from app.core.logging import get_logger
 from app.services.mentions import extract_mentions, matches_agent_mention
 from app.services.openclaw.gateway_dispatch import GatewayDispatchService
-from app.services.openclaw.gateway_rpc import GatewayConfig as GatewayClientConfig
+from app.services.openclaw.gateway_rpc import (
+    GatewayConfig as GatewayClientConfig,
+    OpenClawGatewayError,
+    ensure_session,
+    openclaw_call,
+    send_message,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -39,6 +46,7 @@ if TYPE_CHECKING:
 
     from app.models.boards import Board
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/boards/{board_id}/memory", tags=["board-memory"])
 MAX_SNIPPET_LENGTH = 800
 STREAM_POLL_SECONDS = 2
@@ -124,6 +132,81 @@ async def _send_control_command(
             continue
 
 
+async def _reset_all_agents(
+    *,
+    session: AsyncSession,
+    board: Board,
+    actor: ActorContext,
+    dispatch: GatewayDispatchService,
+    config: GatewayClientConfig,
+) -> None:
+    """Reset sessions for all agents on the board and send wake messages."""
+    agents: list[Agent] = await Agent.objects.filter_by(
+        board_id=board.id,
+    ).all(session)
+
+    for agent in agents:
+        if not agent.openclaw_session_id:
+            continue
+
+        # 1. Reset session
+        try:
+            await openclaw_call(
+                "sessions.reset",
+                {"key": agent.openclaw_session_id},
+                config=config,
+            )
+        except OpenClawGatewayError as exc:
+            msg = str(exc).lower()
+            if not any(m in msg for m in ("not found", "unknown", "no such")):
+                logger.warning(
+                    "board.reset_agent_failed",
+                    extra={"agent": agent.name, "error": str(exc)},
+                )
+            continue
+
+        # 2. Ensure session exists
+        try:
+            await ensure_session(
+                agent.openclaw_session_id,
+                config=config,
+                label=agent.name,
+            )
+        except OpenClawGatewayError as exc:
+            logger.warning(
+                "board.ensure_session_failed",
+                extra={"agent": agent.name, "error": str(exc)},
+            )
+            continue
+
+        # 3. Send wake message
+        try:
+            await send_message(
+                "You have been reset. Read your workspace files "
+                "(IDENTITY.md, MEMORY.md, SOUL.md, TOOLS.md) and await instructions.",
+                session_key=agent.openclaw_session_id,
+                config=config,
+                deliver=True,
+            )
+        except OpenClawGatewayError as exc:
+            logger.warning(
+                "board.wake_agent_failed",
+                extra={"agent": agent.name, "error": str(exc)},
+            )
+            continue
+
+        # 4. Update agent status
+        agent.status = "online"
+        agent.last_seen_at = utcnow()
+        session.add(agent)
+
+    await session.commit()
+    logger.info(
+        "board.reset_all_agents",
+        extra={"board": board.name, "agent_count": len(agents)},
+    )
+
+
 def _chat_targets(
     *,
     agents: list[Agent],
@@ -176,6 +259,16 @@ async def _notify_chat_targets(
             dispatch=dispatch,
             config=config,
             command=command,
+        )
+        return
+
+    if command == "/reset":
+        await _reset_all_agents(
+            session=session,
+            board=board,
+            actor=actor,
+            dispatch=dispatch,
+            config=config,
         )
         return
 

@@ -2,18 +2,19 @@
 
 export const dynamic = "force-dynamic";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/auth/clerk";
 import { useQueryClient } from "@tanstack/react-query";
+import { RefreshCcw } from "lucide-react";
 
 import { AgentsTable } from "@/components/agents/AgentsTable";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import {
   type listAgentsApiV1AgentsGetResponse,
   getListAgentsApiV1AgentsGetQueryKey,
@@ -25,6 +26,10 @@ import {
   getListBoardsApiV1BoardsGetQueryKey,
   useListBoardsApiV1BoardsGet,
 } from "@/api/generated/boards/boards";
+import {
+  type listGatewaysApiV1GatewaysGetResponse,
+  useListGatewaysApiV1GatewaysGet,
+} from "@/api/generated/gateways/gateways";
 import { type AgentRead } from "@/api/generated/model";
 import { createOptimisticListDeleteMutation } from "@/lib/list-delete";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
@@ -52,6 +57,7 @@ export default function AgentsPage() {
   });
 
   const [deleteTarget, setDeleteTarget] = useState<AgentRead | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const boardsKey = getListBoardsApiV1BoardsGetQueryKey();
   const agentsKey = getListAgentsApiV1AgentsGetQueryKey();
@@ -77,6 +83,40 @@ export default function AgentsPage() {
       refetchOnMount: "always",
     },
   });
+
+  const gatewaysQuery = useListGatewaysApiV1GatewaysGet<
+    listGatewaysApiV1GatewaysGetResponse,
+    ApiError
+  >(undefined, {
+    query: {
+      enabled: Boolean(isSignedIn && isAdmin),
+    },
+  });
+
+  const gateways = useMemo(
+    () =>
+      gatewaysQuery.data?.status === 200
+        ? (gatewaysQuery.data.data.items ?? [])
+        : [],
+    [gatewaysQuery.data],
+  );
+
+  const handleSyncAgents = useCallback(async () => {
+    if (gateways.length === 0) return;
+    setIsSyncing(true);
+    try {
+      for (const gw of gateways) {
+        await customFetch(`/api/v1/gateways/${gw.id}/agents/sync`, {
+          method: "POST",
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: agentsKey });
+    } catch {
+      // errors are non-critical; the list will refresh anyway
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [gateways, queryClient, agentsKey]);
 
   const boards = useMemo(
     () =>
@@ -132,11 +172,23 @@ export default function AgentsPage() {
         title="Agents"
         description={`${agents.length} agent${agents.length === 1 ? "" : "s"} total.`}
         headerActions={
-          agents.length > 0 ? (
+          <div className="flex items-center gap-2">
+            {gateways.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={handleSyncAgents}
+                disabled={isSyncing}
+              >
+                <RefreshCcw
+                  className={`mr-1.5 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
+                />
+                {isSyncing ? "Syncing..." : "Sync Agents"}
+              </Button>
+            )}
             <Button onClick={() => router.push("/agents/new")}>
               New agent
             </Button>
-          ) : null
+          </div>
         }
         isAdmin={isAdmin}
         adminOnlyMessage="Only organization owners and admins can access agents."
@@ -152,6 +204,16 @@ export default function AgentsPage() {
             showActions
             stickyHeader
             onDelete={setDeleteTarget}
+            onResetWake={async (agent) => {
+              try {
+                await customFetch(`/api/v1/agents/${agent.id}/reset-and-wake`, {
+                  method: "POST",
+                });
+                agentsQuery.refetch();
+              } catch {
+                // silently ignore — the agent detail page has proper error handling
+              }
+            }}
             emptyState={{
               title: "No agents yet",
               description:
