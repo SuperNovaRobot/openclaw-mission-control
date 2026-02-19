@@ -28,10 +28,6 @@ services:
       # like `backend/templates/`.
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - ./backend/.env.example
-    volumes:
-      - device_keys:/app/app/services/openclaw/.device-keys
     environment:
       # Override localhost defaults for container networking
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@localhost:5432/${POSTGRES_DB:-mission_control}
@@ -40,6 +36,8 @@ services:
       AUTH_MODE: ${AUTH_MODE}
       LOCAL_AUTH_TOKEN: ${LOCAL_AUTH_TOKEN}
       RQ_REDIS_URL: redis://localhost:6379/0
+    volumes:
+      - device_keys:/app/app/services/openclaw/.device-keys
     depends_on:
       db:
         condition: service_healthy
@@ -71,22 +69,23 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: ["rq", "worker", "-u", "redis://redis:6379/0"]
+    command: ["python", "-c", "from app.services.queue_worker import run_worker; run_worker()"]
     env_file:
-      - ./backend/.env.example
+      - ./backend/.env
     depends_on:
       redis:
         condition: service_started
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mission_control}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@localhost:5432/${POSTGRES_DB:-mission_control}
       AUTH_MODE: ${AUTH_MODE}
       LOCAL_AUTH_TOKEN: ${LOCAL_AUTH_TOKEN}
-      RQ_REDIS_URL: redis://redis:6379/0
+      RQ_REDIS_URL: redis://localhost:6379/0
       RQ_QUEUE_NAME: ${RQ_QUEUE_NAME:-default}
       RQ_DISPATCH_THROTTLE_SECONDS: ${RQ_DISPATCH_THROTTLE_SECONDS:-2.0}
       RQ_DISPATCH_MAX_RETRIES: ${RQ_DISPATCH_MAX_RETRIES:-3}
+    network_mode: host
     restart: unless-stopped
 
 volumes:
