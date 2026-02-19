@@ -32,6 +32,10 @@ import {
   useListBoardGroupsApiV1BoardGroupsGet,
 } from "@/api/generated/board-groups/board-groups";
 import {
+  type listBoardsApiV1BoardsGetResponse,
+  useListBoardsApiV1BoardsGet,
+} from "@/api/generated/boards/boards";
+import {
   type listGatewaysApiV1GatewaysGetResponse,
   useListGatewaysApiV1GatewaysGet,
 } from "@/api/generated/gateways/gateways";
@@ -43,6 +47,21 @@ import type {
   BoardRead,
   BoardUpdate,
 } from "@/api/generated/model";
+import { customFetch } from "@/api/mutator";
+import { useQuery, useMutation } from "@tanstack/react-query";
+
+type PipelineRead = {
+  id: string;
+  source_board_id: string;
+  target_board_id: string;
+  trigger_status: string;
+  enabled: boolean;
+  task_title_template: string;
+  task_description_template: string | null;
+  target_agent_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
 import { BoardOnboardingChat } from "@/components/BoardOnboardingChat";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
@@ -581,26 +600,145 @@ export default function EditBoardPage() {
     return webhooksQuery.data.data.items ?? [];
   }, [webhooksQuery.data]);
 
+  // --- Pipeline state ---
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [pipelineTargetBoardId, setPipelineTargetBoardId] = useState("");
+  const [pipelineTriggerStatus, setPipelineTriggerStatus] = useState("done");
+  const [pipelineTitleTemplate, setPipelineTitleTemplate] = useState("");
+  const [pipelineDescriptionTemplate, setPipelineDescriptionTemplate] =
+    useState("");
+  const [pipelineTargetAgentId, setPipelineTargetAgentId] =
+    useState(LEAD_AGENT_VALUE);
+
+  const allBoardsQuery = useListBoardsApiV1BoardsGet<
+    listBoardsApiV1BoardsGetResponse,
+    ApiError
+  >(undefined, {
+    query: {
+      enabled: Boolean(isSignedIn && isAdmin),
+      refetchOnMount: "always",
+      retry: false,
+    },
+  });
+  const allBoards = useMemo<BoardRead[]>(() => {
+    if (allBoardsQuery.data?.status !== 200) return [];
+    return allBoardsQuery.data.data.items ?? [];
+  }, [allBoardsQuery.data]);
+
+  const pipelinesQuery = useQuery<PipelineRead[]>({
+    queryKey: ["board-pipelines", boardId],
+    queryFn: async () => {
+      const res = await customFetch<{ data: PipelineRead[]; status: number }>(
+        `/api/v1/boards/${boardId}/pipelines`,
+        { method: "GET" },
+      );
+      return res.data;
+    },
+    enabled: Boolean(isSignedIn && isAdmin && boardId),
+    refetchOnMount: true,
+    retry: false,
+  });
+  const pipelines = pipelinesQuery.data ?? [];
+
+  const createPipelineMutation = useMutation({
+    mutationFn: async (data: {
+      target_board_id: string;
+      trigger_status: string;
+      task_title_template: string;
+      task_description_template: string | null;
+      target_agent_id: string | null;
+      enabled: boolean;
+    }) => {
+      return customFetch<{ data: PipelineRead; status: number }>(
+        `/api/v1/boards/${boardId}/pipelines`,
+        { method: "POST", body: JSON.stringify(data) },
+      );
+    },
+    onSuccess: () => {
+      setPipelineTitleTemplate("");
+      setPipelineDescriptionTemplate("");
+      setPipelineTargetBoardId("");
+      setPipelineTriggerStatus("done");
+      setPipelineTargetAgentId(LEAD_AGENT_VALUE);
+      pipelinesQuery.refetch();
+    },
+    onError: (err: Error) => {
+      setPipelineError(err.message || "Unable to create pipeline.");
+    },
+  });
+
+  const deletePipelineMutation = useMutation({
+    mutationFn: async (pipelineId: string) => {
+      return customFetch<{ status: number }>(
+        `/api/v1/boards/${boardId}/pipelines/${pipelineId}`,
+        { method: "DELETE" },
+      );
+    },
+    onSuccess: () => {
+      pipelinesQuery.refetch();
+    },
+    onError: (err: Error) => {
+      setPipelineError(err.message || "Unable to delete pipeline.");
+    },
+  });
+
+  const togglePipelineMutation = useMutation({
+    mutationFn: async ({
+      pipelineId,
+      enabled,
+    }: {
+      pipelineId: string;
+      enabled: boolean;
+    }) => {
+      return customFetch<{ data: PipelineRead; status: number }>(
+        `/api/v1/boards/${boardId}/pipelines/${pipelineId}`,
+        { method: "PATCH", body: JSON.stringify({ enabled }) },
+      );
+    },
+    onSuccess: () => {
+      pipelinesQuery.refetch();
+    },
+    onError: (err: Error) => {
+      setPipelineError(err.message || "Unable to update pipeline.");
+    },
+  });
+
+  const handleCreatePipeline = () => {
+    if (!boardId || !pipelineTargetBoardId) return;
+    if (!pipelineTitleTemplate.trim()) {
+      setPipelineError("Title template is required.");
+      return;
+    }
+    setPipelineError(null);
+    createPipelineMutation.mutate({
+      target_board_id: pipelineTargetBoardId,
+      trigger_status: pipelineTriggerStatus,
+      task_title_template: pipelineTitleTemplate.trim(),
+      task_description_template: pipelineDescriptionTemplate.trim() || null,
+      target_agent_id:
+        pipelineTargetAgentId === LEAD_AGENT_VALUE
+          ? null
+          : pipelineTargetAgentId,
+      enabled: true,
+    });
+  };
+
+  const handleDeletePipeline = (pipelineId: string) => {
+    if (deletePipelineMutation.isPending) return;
+    setPipelineError(null);
+    deletePipelineMutation.mutate(pipelineId);
+  };
+
+  const handleTogglePipeline = (pipelineId: string, enabled: boolean) => {
+    if (togglePipelineMutation.isPending) return;
+    setPipelineError(null);
+    togglePipelineMutation.mutate({ pipelineId, enabled });
+  };
+
   const handleOnboardingConfirmed = (updated: BoardRead) => {
     setBoard(updated);
-    setDescription(updated.description ?? "");
-    setBoardType(updated.board_type ?? "goal");
-    setObjective(updated.objective ?? "");
-    setRequireApprovalForDone(updated.require_approval_for_done ?? true);
-    setRequireReviewBeforeDone(updated.require_review_before_done ?? false);
-    setBlockStatusChangesWithPendingApproval(
-      updated.block_status_changes_with_pending_approval ?? false,
-    );
-    setOnlyLeadCanChangeStatus(updated.only_lead_can_change_status ?? false);
-    setMaxAgents(updated.max_agents ?? 1);
-    setSuccessMetrics(
-      updated.success_metrics
-        ? JSON.stringify(updated.success_metrics, null, 2)
-        : "",
-    );
-    setTargetDate(toLocalDateInput(updated.target_date));
-    setBoardGroupId(updated.board_group_id ?? "none");
     setIsOnboardingOpen(false);
+    router.push(`/boards/${updated.id}`);
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -1215,6 +1353,284 @@ export default function EditBoardPage() {
                       onViewPayloads={handleViewWebhookPayloads}
                       onUpdate={handleUpdateWebhook}
                     />
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-4 border-t border-slate-200 pt-4">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Task Pipelines
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Automatically create tasks on this or another board when a
+                  task reaches a specific status. Boards in the same group are
+                  shown together.
+                </p>
+              </div>
+              <div className="space-y-3 rounded-lg border border-slate-200 px-4 py-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-900">
+                      Target board
+                    </label>
+                    <Select
+                      value={pipelineTargetBoardId}
+                      onValueChange={setPipelineTargetBoardId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select target board" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(() => {
+                          const grouped = new Map<
+                            string,
+                            { groupName: string; boards: BoardRead[] }
+                          >();
+                          const ungrouped: BoardRead[] = [];
+                          for (const b of allBoards) {
+                            if (b.board_group_id) {
+                              const g = groups.find(
+                                (gr) => gr.id === b.board_group_id,
+                              );
+                              const key = b.board_group_id;
+                              if (!grouped.has(key)) {
+                                grouped.set(key, {
+                                  groupName: g?.name ?? "Group",
+                                  boards: [],
+                                });
+                              }
+                              grouped.get(key)!.boards.push(b);
+                            } else {
+                              ungrouped.push(b);
+                            }
+                          }
+                          return (
+                            <>
+                              {Array.from(grouped.entries()).map(
+                                ([key, { groupName, boards: gBoards }]) => (
+                                  <div key={key}>
+                                    <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                      {groupName}
+                                    </p>
+                                    {gBoards.map((b) => (
+                                      <SelectItem key={b.id} value={b.id}>
+                                        {b.name}
+                                        {b.id === boardId ? " (this board)" : ""}
+                                      </SelectItem>
+                                    ))}
+                                  </div>
+                                ),
+                              )}
+                              {ungrouped.length > 0 ? (
+                                <div>
+                                  {grouped.size > 0 ? (
+                                    <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                      Ungrouped
+                                    </p>
+                                  ) : null}
+                                  {ungrouped.map((b) => (
+                                    <SelectItem key={b.id} value={b.id}>
+                                      {b.name}
+                                      {b.id === boardId ? " (this board)" : ""}
+                                    </SelectItem>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-900">
+                      Trigger when status is
+                    </label>
+                    <Select
+                      value={pipelineTriggerStatus}
+                      onValueChange={setPipelineTriggerStatus}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="done">Done</SelectItem>
+                        <SelectItem value="review">Review</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="inbox">Inbox</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-900">
+                    New task title template
+                  </label>
+                  <Input
+                    value={pipelineTitleTemplate}
+                    onChange={(e) => setPipelineTitleTemplate(e.target.value)}
+                    placeholder='e.g. Video: {{source_task.title}}'
+                    disabled={isLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-900">
+                    New task description template
+                  </label>
+                  <Textarea
+                    value={pipelineDescriptionTemplate}
+                    onChange={(e) =>
+                      setPipelineDescriptionTemplate(e.target.value)
+                    }
+                    placeholder="e.g. Create video from completed script.&#10;Source task: {{source_task.title}}&#10;Details: {{source_task.description}}"
+                    className="min-h-[70px]"
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-slate-500">
+                    Variables:{" "}
+                    <code className="text-xs">{"{{source_task.title}}"}</code>,{" "}
+                    <code className="text-xs">
+                      {"{{source_task.description}}"}
+                    </code>
+                    ,{" "}
+                    <code className="text-xs">{"{{source_board.name}}"}</code>,{" "}
+                    <code className="text-xs">
+                      {"{{source_task.agent_name}}"}
+                    </code>
+                    ,{" "}
+                    <code className="text-xs">{"{{source_task.id}}"}</code>
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-900">
+                    Assign to agent (optional)
+                  </label>
+                  <Select
+                    value={pipelineTargetAgentId}
+                    onValueChange={setPipelineTargetAgentId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Lead agent (default)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={LEAD_AGENT_VALUE}>
+                        Lead agent (default)
+                      </SelectItem>
+                      {webhookAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.name}
+                          {agent.is_board_lead ? " (lead)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={handleCreatePipeline}
+                    disabled={
+                      isLoading ||
+                      createPipelineMutation.isPending ||
+                      !pipelineTargetBoardId ||
+                      !pipelineTitleTemplate.trim()
+                    }
+                  >
+                    {createPipelineMutation.isPending
+                      ? "Creating pipeline…"
+                      : "Create pipeline"}
+                  </Button>
+                </div>
+              </div>
+
+              {pipelineError ? (
+                <p className="text-sm text-red-500">{pipelineError}</p>
+              ) : null}
+
+              {pipelinesQuery.isLoading ? (
+                <p className="text-sm text-slate-500">Loading pipelines…</p>
+              ) : null}
+
+              {!pipelinesQuery.isLoading && pipelines.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-600">
+                  No pipelines configured yet. Tasks will stop on this board by
+                  default.
+                </p>
+              ) : null}
+
+              <div className="space-y-3">
+                {pipelines.map((pipeline) => {
+                  const targetBoard = allBoards.find(
+                    (b) => b.id === pipeline.target_board_id,
+                  );
+                  const isSameBoard = pipeline.target_board_id === boardId;
+                  return (
+                    <div
+                      key={pipeline.id}
+                      className="space-y-2 rounded-lg border border-slate-200 px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">
+                            When{" "}
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium">
+                              {pipeline.trigger_status}
+                            </span>{" "}
+                            → create task on{" "}
+                            <span className="font-semibold text-blue-700">
+                              {targetBoard?.name ?? "Unknown board"}
+                            </span>
+                            {isSameBoard ? (
+                              <span className="ml-1 text-xs text-slate-500">
+                                (this board)
+                              </span>
+                            ) : null}
+                          </span>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              pipeline.enabled
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {pipeline.enabled ? "Enabled" : "Disabled"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() =>
+                              handleTogglePipeline(
+                                pipeline.id,
+                                !pipeline.enabled,
+                              )
+                            }
+                            disabled={togglePipelineMutation.isPending}
+                          >
+                            {pipeline.enabled ? "Disable" : "Enable"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => handleDeletePipeline(pipeline.id)}
+                            disabled={deletePipelineMutation.isPending}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        Title: {pipeline.task_title_template || "—"}
+                      </p>
+                      {pipeline.task_description_template ? (
+                        <p className="text-xs text-slate-500 line-clamp-2">
+                          Description: {pipeline.task_description_template}
+                        </p>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>

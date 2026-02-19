@@ -85,6 +85,8 @@ class TaskRead(TaskBase):
     is_blocked: bool = False
     tags: list[TagRef] = Field(default_factory=list)
     custom_field_values: TaskCustomFieldValues | None = None
+    auto_created: bool = False
+    auto_reason: str | None = None
 
 
 class TaskCommentCreate(SQLModel):

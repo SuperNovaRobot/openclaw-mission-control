@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.queue import QueuedTask, dequeue_task
+from app.services.pipeline_queue import (
+    TASK_TYPE as PIPELINE_TASK_TYPE,
+    process_pipeline_queue_task,
+    requeue_pipeline_task,
+)
 from app.services.webhooks.dispatch import (
     process_webhook_queue_task,
     requeue_webhook_queue_task,
@@ -34,6 +39,14 @@ _TASK_HANDLERS: dict[str, _TaskHandler] = {
             settings.rq_dispatch_retry_max_seconds,
         ),
         requeue=lambda task, delay: requeue_webhook_queue_task(task, delay_seconds=delay),
+    ),
+    PIPELINE_TASK_TYPE: _TaskHandler(
+        handler=process_pipeline_queue_task,
+        attempts_to_delay=lambda attempts: min(
+            settings.rq_dispatch_retry_base_seconds * (2 ** max(0, attempts)),
+            settings.rq_dispatch_retry_max_seconds,
+        ),
+        requeue=lambda task, delay: requeue_pipeline_task(task, delay_seconds=delay),
     ),
 }
 

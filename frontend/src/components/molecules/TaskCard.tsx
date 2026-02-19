@@ -15,6 +15,8 @@ interface TaskCardProps {
   tags?: Array<{ id: string; name: string; color: string }>;
   isBlocked?: boolean;
   blockedByCount?: number;
+  autoCreated?: boolean;
+  autoReason?: string | null;
   onClick?: () => void;
   draggable?: boolean;
   isDragging?: boolean;
@@ -33,6 +35,8 @@ export function TaskCard({
   tags = [],
   isBlocked = false,
   blockedByCount = 0,
+  autoCreated = false,
+  autoReason,
   onClick,
   draggable = false,
   isDragging = false,
@@ -118,6 +122,12 @@ export function TaskCard({
             <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
               Waiting for lead review
+            </div>
+          ) : null}
+          {autoCreated && autoReason?.startsWith("pipeline:") ? (
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+              Pipeline
             </div>
           ) : null}
           {visibleTags.length ? (

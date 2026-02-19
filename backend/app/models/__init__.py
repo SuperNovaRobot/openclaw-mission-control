@@ -8,6 +8,7 @@ from app.models.board_group_memory import BoardGroupMemory
 from app.models.board_groups import BoardGroup
 from app.models.board_memory import BoardMemory
 from app.models.board_onboarding import BoardOnboardingSession
+from app.models.board_task_pipelines import BoardTaskPipeline
 from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
@@ -36,6 +37,7 @@ __all__ = [
     "ApprovalTaskLink",
     "Approval",
     "BoardGroupMemory",
+    "BoardTaskPipeline",
     "BoardWebhook",
     "BoardWebhookPayload",
     "BoardMemory",

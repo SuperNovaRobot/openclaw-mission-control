@@ -52,6 +52,7 @@ from app.schemas.task_custom_fields import (
 )
 from app.schemas.tasks import TaskCommentCreate, TaskCommentRead, TaskCreate, TaskRead, TaskUpdate
 from app.services.activity_log import record_activity
+from app.services.pipeline_queue import enqueue_pipeline_evaluation
 from app.services.approval_task_links import (
     load_task_ids_by_approval,
     pending_approval_conflicts_by_task,
@@ -1307,6 +1308,17 @@ async def create_task(
     )
     if blocked_by and (task.assigned_agent_id is not None or task.status != "inbox"):
         raise _blocked_task_error(blocked_by)
+
+    # Auto-assign to lead agent if no agent specified and not blocked
+    if task.assigned_agent_id is None and not blocked_by:
+        lead = (
+            await Agent.objects.filter_by(board_id=board.id)
+            .filter(col(Agent.is_board_lead).is_(True))
+            .first(session)
+        )
+        if lead is not None:
+            task.assigned_agent_id = lead.id
+
     session.add(task)
     # Ensure the task exists in the DB before inserting dependency rows.
     await session.flush()
@@ -1908,6 +1920,30 @@ async def _lead_apply_assignment(
 def _lead_apply_status(update: _TaskUpdateInput) -> None:
     if "status" not in update.updates:
         return
+
+    actor_agent = update.actor.agent
+    task_assigned_to_lead = (
+        actor_agent is not None
+        and update.task.assigned_agent_id == actor_agent.id
+    )
+
+    # Allow leads to self-manage tasks assigned to themselves (inbox→in_progress→review)
+    if task_assigned_to_lead and update.task.status in ("inbox", "in_progress"):
+        target_status = _required_status_value(update.updates["status"])
+        allowed = {"in_progress", "review", "inbox"}
+        if target_status not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Lead self-assign gate: can only move own tasks to in_progress, review, or inbox "
+                    f"(requested: `{target_status}`)."
+                ),
+            )
+        if target_status == "inbox":
+            update.task.in_progress_at = None
+        update.task.status = target_status
+        return
+
     if update.task.status != "review":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1964,6 +2000,12 @@ async def _lead_notify_new_assignee(
             task=update.task,
             agent=assigned_agent,
         )
+
+
+def _enqueue_pipeline_if_needed(task: Task, previous_status: str) -> None:
+    """Enqueue pipeline evaluation when a task's status actually changed."""
+    if task.status != previous_status and task.board_id is not None:
+        enqueue_pipeline_evaluation(task.id, task.board_id, task.status)
 
 
 async def _apply_lead_task_update(
@@ -2050,6 +2092,7 @@ async def _apply_lead_task_update(
     )
     await session.commit()
     await session.refresh(update.task)
+    _enqueue_pipeline_if_needed(update.task, update.previous_status)
     await _lead_notify_new_assignee(session, update=update)
     return await _task_read_response(
         session,
@@ -2393,6 +2436,7 @@ async def _finalize_updated_task(
     await _record_task_comment_from_update(session, update=update)
     await _record_task_update_activity(session, update=update)
     await _notify_task_update_assignment_changes(session, update=update)
+    _enqueue_pipeline_if_needed(update.task, update.previous_status)
 
     return await _task_read_response(
         session,
