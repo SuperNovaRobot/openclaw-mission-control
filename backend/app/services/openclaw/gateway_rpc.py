@@ -367,13 +367,39 @@ async def _ensure_connected(
     await _await_response(ws, connect_id)
 
 
+_RPC_MAX_RETRIES = 3
+_RPC_RETRY_DELAY_SECONDS = 0.5
+
+
+async def _openclaw_call_once(
+    method: str,
+    params: dict[str, Any] | None,
+    *,
+    config: GatewayConfig,
+    gateway_url: str,
+) -> object:
+    """Execute a single RPC attempt (no retries)."""
+    async with websockets.connect(gateway_url, ping_interval=None) as ws:
+        first_message = None
+        try:
+            first_message = await asyncio.wait_for(ws.recv(), timeout=2)
+        except TimeoutError:
+            first_message = None
+        await _ensure_connected(ws, first_message, config)
+        return await _send_request(ws, method, params)
+
+
 async def openclaw_call(
     method: str,
     params: dict[str, Any] | None = None,
     *,
     config: GatewayConfig,
 ) -> object:
-    """Call a gateway RPC method and return the result payload."""
+    """Call a gateway RPC method and return the result payload.
+
+    Retries up to ``_RPC_MAX_RETRIES`` times on transient transport errors
+    (e.g. HTTP 502 from a reverse proxy) with a short delay between attempts.
+    """
     gateway_url = _build_gateway_url(config)
     started_at = perf_counter()
     logger.debug(
@@ -381,42 +407,56 @@ async def openclaw_call(
         method,
         _redacted_url_for_log(gateway_url),
     )
-    try:
-        async with websockets.connect(gateway_url, ping_interval=None) as ws:
-            first_message = None
-            try:
-                first_message = await asyncio.wait_for(ws.recv(), timeout=2)
-            except TimeoutError:
-                first_message = None
-            await _ensure_connected(ws, first_message, config)
-            payload = await _send_request(ws, method, params)
+    last_exc: Exception | None = None
+    for attempt in range(1, _RPC_MAX_RETRIES + 1):
+        try:
+            payload = await _openclaw_call_once(
+                method, params, config=config, gateway_url=gateway_url,
+            )
             logger.debug(
-                "gateway.rpc.call.success method=%s duration_ms=%s",
+                "gateway.rpc.call.success method=%s duration_ms=%s attempt=%s",
+                method,
+                int((perf_counter() - started_at) * 1000),
+                attempt,
+            )
+            return payload
+        except OpenClawGatewayError:
+            # Application-level errors from the gateway are not retryable.
+            logger.warning(
+                "gateway.rpc.call.gateway_error method=%s duration_ms=%s",
                 method,
                 int((perf_counter() - started_at) * 1000),
             )
-            return payload
-    except OpenClawGatewayError:
-        logger.warning(
-            "gateway.rpc.call.gateway_error method=%s duration_ms=%s",
-            method,
-            int((perf_counter() - started_at) * 1000),
-        )
-        raise
-    except (
-        TimeoutError,
-        ConnectionError,
-        OSError,
-        ValueError,
-        WebSocketException,
-    ) as exc:  # pragma: no cover - network/protocol errors
-        logger.error(
-            "gateway.rpc.call.transport_error method=%s duration_ms=%s error_type=%s",
-            method,
-            int((perf_counter() - started_at) * 1000),
-            exc.__class__.__name__,
-        )
-        raise OpenClawGatewayError(str(exc)) from exc
+            raise
+        except (
+            TimeoutError,
+            ConnectionError,
+            OSError,
+            ValueError,
+            WebSocketException,
+        ) as exc:
+            last_exc = exc
+            if attempt < _RPC_MAX_RETRIES:
+                logger.warning(
+                    "gateway.rpc.call.transport_retry method=%s attempt=%s/%s error_type=%s error=%s",
+                    method,
+                    attempt,
+                    _RPC_MAX_RETRIES,
+                    exc.__class__.__name__,
+                    str(exc)[:200],
+                )
+                await asyncio.sleep(_RPC_RETRY_DELAY_SECONDS * attempt)
+            else:
+                logger.error(
+                    "gateway.rpc.call.transport_error method=%s duration_ms=%s error_type=%s attempts=%s",
+                    method,
+                    int((perf_counter() - started_at) * 1000),
+                    exc.__class__.__name__,
+                    _RPC_MAX_RETRIES,
+                )
+                raise OpenClawGatewayError(str(exc)) from exc
+    # Should not reach here, but satisfy type checker.
+    raise OpenClawGatewayError(str(last_exc)) from last_exc
 
 
 async def send_message(

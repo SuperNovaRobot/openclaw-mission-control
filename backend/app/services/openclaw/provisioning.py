@@ -523,6 +523,10 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
         # Prefer an idempotent "create then update" flow.
         # - Avoids enumerating gateway agents for existence checks.
         # - Ensures we always hit the "create" RPC first, per lifecycle expectations.
+        # NOTE: heartbeat patching is intentionally NOT done here.  It uses
+        # config.patch which triggers a gateway hot-reload.  Callers should
+        # call patch_agent_heartbeats() *after* all file writes are complete
+        # so the restart doesn't break subsequent RPC calls.
         try:
             await openclaw_call(
                 "agents.create",
@@ -546,9 +550,6 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
                 "workspace": registration.workspace_path,
             },
             config=self._config,
-        )
-        await self.patch_agent_heartbeats(
-            [(registration.agent_id, registration.workspace_path, registration.heartbeat)],
         )
 
     async def delete_agent(self, agent_id: str, *, delete_files: bool = True) -> None:
@@ -863,6 +864,12 @@ class BaseAgentLifecycleManager(ABC):
             existing_files=existing_files,
             action=options.action,
             overwrite=options.overwrite,
+        )
+
+        # Patch heartbeat config AFTER file writes.  config.patch triggers a
+        # gateway hot-reload which would break any RPC calls that follow it.
+        await self._control_plane.patch_agent_heartbeats(
+            [(agent_id, workspace_path, heartbeat)],
         )
 
 
