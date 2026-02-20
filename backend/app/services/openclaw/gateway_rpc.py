@@ -367,8 +367,8 @@ async def _ensure_connected(
     await _await_response(ws, connect_id)
 
 
-_RPC_MAX_RETRIES = 3
-_RPC_RETRY_DELAY_SECONDS = 0.5
+_RPC_MAX_RETRIES = 5
+_RPC_RETRY_DELAY_SECONDS = 1.0
 
 
 async def _openclaw_call_once(

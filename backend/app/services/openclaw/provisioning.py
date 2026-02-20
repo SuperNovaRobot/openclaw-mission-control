@@ -866,11 +866,11 @@ class BaseAgentLifecycleManager(ABC):
             overwrite=options.overwrite,
         )
 
-        # Patch heartbeat config AFTER file writes.  config.patch triggers a
-        # gateway hot-reload which would break any RPC calls that follow it.
-        await self._control_plane.patch_agent_heartbeats(
-            [(agent_id, workspace_path, heartbeat)],
-        )
+        # NOTE: patch_agent_heartbeats (config.patch) is intentionally NOT
+        # called here.  config.patch triggers a gateway hot-reload which kills
+        # active WebSocket connections.  The caller (apply_agent_lifecycle)
+        # must invoke it as the very last RPC step, after ensure_session and
+        # send_message have completed.
 
 
 class BoardAgentLifecycleManager(BaseAgentLifecycleManager):
@@ -1103,17 +1103,26 @@ class OpenClawGatewayProvisioner:
                 if not _is_missing_session_error(exc):
                     raise
 
-        if not wake:
-            return
+        if wake:
+            client_config = GatewayClientConfig(url=gateway.url, token=gateway.token)
+            await ensure_session(session_key, config=client_config, label=agent.name)
+            verb = wakeup_verb or ("provisioned" if action == "provision" else "updated")
+            await send_message(
+                _wakeup_text(agent, verb=verb),
+                session_key=session_key,
+                config=client_config,
+                deliver=deliver_wakeup,
+            )
 
-        client_config = GatewayClientConfig(url=gateway.url, token=gateway.token)
-        await ensure_session(session_key, config=client_config, label=agent.name)
-        verb = wakeup_verb or ("provisioned" if action == "provision" else "updated")
-        await send_message(
-            _wakeup_text(agent, verb=verb),
-            session_key=session_key,
-            config=client_config,
-            deliver=deliver_wakeup,
+        # config.patch MUST be the very last RPC call.  It triggers a gateway
+        # hot-reload that drops all WebSocket connections.  Doing it after
+        # ensure_session + send_message avoids 502/503 errors on remote
+        # gateways (e.g. Tailscale Serve) that take longer to restart.
+        agent_id = manager._agent_id(agent)
+        workspace_path = _workspace_path(agent, gateway.workspace_root)
+        heartbeat = _heartbeat_config(agent)
+        await control_plane.patch_agent_heartbeats(
+            [(agent_id, workspace_path, heartbeat)],
         )
 
     async def delete_agent_lifecycle(
