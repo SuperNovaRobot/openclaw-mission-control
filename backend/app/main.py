@@ -31,6 +31,7 @@ from app.api.skills_marketplace import router as skills_marketplace_router
 from app.api.souls_directory import router as souls_directory_router
 from app.api.tags import router as tags_router
 from app.api.task_custom_fields import router as task_custom_fields_router
+from app.api.task_templates import router as task_templates_router
 from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
 from app.core.config import settings
@@ -549,6 +550,7 @@ api_v1.include_router(board_onboarding_router)
 api_v1.include_router(approvals_router)
 api_v1.include_router(tasks_router)
 api_v1.include_router(task_custom_fields_router)
+api_v1.include_router(task_templates_router)
 api_v1.include_router(tags_router)
 api_v1.include_router(users_router)
 app.include_router(api_v1)
