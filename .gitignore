@@ -27,3 +27,6 @@ backend/~/
 backend/coverage.*
 backend/.coverage
 frontend/coverage
+
+# External reference docs
+openclaw_docs/
