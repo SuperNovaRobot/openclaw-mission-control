@@ -345,9 +345,6 @@ async def get_agent_model(
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> _SetModelResponse:
     """Get the current LLM model override for an agent from the gateway config."""
-    import json
-    from pathlib import Path
-
     agent = await session.get(Agent, agent_id)
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
@@ -359,16 +356,22 @@ async def get_agent_model(
         return _SetModelResponse(model=None)
     openclaw_agent_id = match.group(1)
 
-    config_path = Path("/openclaw-config.json")
-    if not config_path.exists():
+    # Read live config from gateway via RPC
+    gateway = await session.get(Gateway, agent.gateway_id)
+    if gateway is None:
         return _SetModelResponse(model=None)
 
     try:
-        gw_config = json.loads(config_path.read_text())
-    except (json.JSONDecodeError, OSError):
+        config = gateway_client_config(gateway)
+        cfg = await openclaw_call("config.get", config=config)
+    except (OpenClawGatewayError, HTTPException):
         return _SetModelResponse(model=None)
 
-    for entry in gw_config.get("agents", {}).get("list", []):
+    if not isinstance(cfg, dict):
+        return _SetModelResponse(model=None)
+
+    data = cfg.get("config") or cfg.get("parsed") or {}
+    for entry in (data.get("agents") or {}).get("list") or []:
         if entry.get("id") == openclaw_agent_id:
             return _SetModelResponse(model=entry.get("model"))
 
@@ -382,9 +385,8 @@ async def set_agent_model(
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> _SetModelResponse:
-    """Change the LLM model for an agent by writing to the gateway config file."""
+    """Change the LLM model for an agent via gateway config.patch RPC."""
     import json
-    from pathlib import Path
 
     agent = await session.get(Agent, agent_id)
     if agent is None:
@@ -404,24 +406,34 @@ async def set_agent_model(
         )
     openclaw_agent_id = match.group(1)
 
-    # Read the gateway config file
-    config_path = Path("/openclaw-config.json")
-    if not config_path.exists():
+    # Resolve gateway config for RPC
+    gateway = await session.get(Gateway, agent.gateway_id)
+    if gateway is None:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Gateway config file not found.",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Agent's gateway not found.",
         )
+    config = gateway_client_config(gateway)
 
+    # Fetch current config from gateway to get agents.list and baseHash
     try:
-        gw_config = json.loads(config_path.read_text())
-    except (json.JSONDecodeError, OSError) as exc:
+        cfg = await openclaw_call("config.get", config=config)
+    except OpenClawGatewayError as exc:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to read gateway config: {exc}",
         ) from exc
 
+    if not isinstance(cfg, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Gateway returned invalid config payload.",
+        )
+
+    data = cfg.get("config") or cfg.get("parsed") or {}
+    agents_list = (data.get("agents") or {}).get("list") or []
+
     # Find the agent in agents.list and update its model
-    agents_list = gw_config.get("agents", {}).get("list", [])
     agent_found = False
     for entry in agents_list:
         if entry.get("id") == openclaw_agent_id:
@@ -438,13 +450,19 @@ async def set_agent_model(
             detail=f"Agent '{openclaw_agent_id}' not found in gateway config.",
         )
 
-    # Write the updated config back
+    # Send config.patch RPC — this writes the config AND triggers a hot-reload
+    patch = {"agents": {"list": agents_list}}
+    params: dict[str, str] = {"raw": json.dumps(patch)}
+    base_hash = cfg.get("hash")
+    if base_hash:
+        params["baseHash"] = base_hash
+
     try:
-        config_path.write_text(json.dumps(gw_config, indent=2) + "\n")
-    except OSError as exc:
+        await openclaw_call("config.patch", params, config=config)
+    except OpenClawGatewayError as exc:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to write gateway config: {exc}",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gateway config.patch failed: {exc}",
         ) from exc
 
     logger.info(
