@@ -14,14 +14,17 @@ import { SignInButton, SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 import {
   Activity,
   ArrowUpRight,
+  BookTemplate,
+  Copy,
   MessageSquare,
   Pause,
-  Plus,
   Pencil,
   Play,
+  Plus,
   RefreshCcw,
   Settings,
   ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -58,7 +61,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import { streamAgentsApiV1AgentsStreamGet } from "@/api/generated/agents/agents";
 import {
   streamApprovalsApiV1BoardsBoardIdApprovalsStreamGet,
@@ -158,6 +161,18 @@ type TaskComment = TaskCommentRead;
 type Approval = ApprovalRead & { status: string };
 
 type BoardChatMessage = BoardMemoryRead;
+
+type TaskTemplateRead = {
+  id: string;
+  organization_id: string;
+  board_id: string | null;
+  name: string;
+  title_template: string;
+  description_template: string | null;
+  created_from_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 type LiveFeedEventType =
   | "task.comment"
@@ -1102,6 +1117,21 @@ export default function BoardDetailPage() {
     tasks,
   ]);
 
+  /* ── Task templates ── */
+  const [templates, setTemplates] = useState<TaskTemplateRead[]>([]);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateTitle, setSaveTemplateTitle] = useState("");
+  const [saveTemplateDesc, setSaveTemplateDesc] = useState("");
+  const [saveTemplateOrgWide, setSaveTemplateOrgWide] = useState(false);
+  const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editTemplateName, setEditTemplateName] = useState("");
+  const [editTemplateTitleTpl, setEditTemplateTitleTpl] = useState("");
+  const [editTemplateDescTpl, setEditTemplateDescTpl] = useState("");
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1944,6 +1974,120 @@ export default function BoardDetailPage() {
     setCreateTagIds([]);
     setCreateCustomFieldValues(defaultCreateCustomFieldValues);
     setCreateError(null);
+  };
+
+  /* ── Template helpers ── */
+  const fetchTemplates = useCallback(async () => {
+    if (!isSignedIn || !boardId) return;
+    try {
+      const res = await customFetch<{ data: TaskTemplateRead[]; status: number }>(
+        `/api/v1/boards/${boardId}/templates`,
+        { method: "GET" },
+      );
+      setTemplates(res.data);
+    } catch {
+      /* silently ignore — templates are optional UX */
+    }
+  }, [isSignedIn, boardId]);
+
+  useEffect(() => {
+    void fetchTemplates();
+  }, [fetchTemplates]);
+
+  const boardTemplates = useMemo(
+    () => templates.filter((t) => t.board_id !== null),
+    [templates],
+  );
+  const orgTemplates = useMemo(
+    () => templates.filter((t) => t.board_id === null),
+    [templates],
+  );
+
+  const handlePickTemplate = (tpl: TaskTemplateRead | null) => {
+    setIsTemplatePickerOpen(false);
+    if (tpl) {
+      setTitle(tpl.title_template);
+      setDescription(tpl.description_template ?? "");
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!boardId) return;
+    const trimmedName = saveTemplateName.trim();
+    if (!trimmedName) {
+      setSaveTemplateError("Template name is required.");
+      return;
+    }
+    setIsSavingTemplate(true);
+    setSaveTemplateError(null);
+    try {
+      await customFetch<{ data: TaskTemplateRead; status: number }>(
+        `/api/v1/boards/${boardId}/templates`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: trimmedName,
+            title_template: saveTemplateTitle.trim(),
+            description_template: saveTemplateDesc.trim() || null,
+            board_id: saveTemplateOrgWide ? null : undefined,
+          }),
+        },
+      );
+      setIsSaveTemplateOpen(false);
+      setSaveTemplateName("");
+      setSaveTemplateTitle("");
+      setSaveTemplateDesc("");
+      setSaveTemplateOrgWide(false);
+      void fetchTemplates();
+    } catch (err) {
+      setSaveTemplateError(formatActionError(err, "Unable to save template."));
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    if (!boardId) return;
+    try {
+      await customFetch<{ status: number }>(
+        `/api/v1/boards/${boardId}/templates/${templateId}`,
+        { method: "DELETE" },
+      );
+      void fetchTemplates();
+    } catch (err) {
+      pushToast(formatActionError(err, "Unable to delete template."));
+    }
+  };
+
+  const handleUpdateTemplate = async (templateId: string) => {
+    if (!boardId) return;
+    try {
+      await customFetch<{ data: TaskTemplateRead; status: number }>(
+        `/api/v1/boards/${boardId}/templates/${templateId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: editTemplateName.trim(),
+            title_template: editTemplateTitleTpl.trim(),
+            description_template: editTemplateDescTpl.trim() || null,
+          }),
+        },
+      );
+      setEditingTemplateId(null);
+      void fetchTemplates();
+    } catch (err) {
+      pushToast(formatActionError(err, "Unable to update template."));
+    }
+  };
+
+  const openSaveTemplateFromTask = (task: Task) => {
+    setSaveTemplateName(task.title);
+    setSaveTemplateTitle(task.title);
+    setSaveTemplateDesc(task.description ?? "");
+    setSaveTemplateOrgWide(false);
+    setSaveTemplateError(null);
+    setIsSaveTemplateOpen(true);
   };
 
   const handleCreateTask = async () => {
@@ -3045,7 +3189,11 @@ export default function BoardDetailPage() {
                     </button>
                   </div>
                   <Button
-                    onClick={() => setIsDialogOpen(true)}
+                    onClick={() =>
+                      templates.length > 0
+                        ? setIsTemplatePickerOpen(true)
+                        : setIsDialogOpen(true)
+                    }
                     className="h-9 w-9 p-0"
                     aria-label="New task"
                     title={canWrite ? "New task" : "Read-only access"}
@@ -3460,7 +3608,11 @@ export default function BoardDetailPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setIsDialogOpen(true)}
+                            onClick={() =>
+                              templates.length > 0
+                                ? setIsTemplatePickerOpen(true)
+                                : setIsDialogOpen(true)
+                            }
                             disabled={isCreating || !canWrite}
                             title={canWrite ? "New task" : "Read-only access"}
                           >
@@ -3597,6 +3749,16 @@ export default function BoardDetailPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {selectedTask && canWrite ? (
+                <button
+                  type="button"
+                  onClick={() => openSaveTemplateFromTask(selectedTask)}
+                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
+                  title="Save as template"
+                >
+                  <BookTemplate className="h-4 w-4" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setIsEditDialogOpen(true)}
@@ -4588,6 +4750,275 @@ export default function BoardDetailPage() {
           </DialogContent>
         </Dialog>
       ) : null}
+
+      {/* ── Template picker dialog ── */}
+      <Dialog open={isTemplatePickerOpen} onOpenChange={setIsTemplatePickerOpen}>
+        <DialogContent aria-label="Pick a template" className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>New task</DialogTitle>
+            <DialogDescription>
+              Start from a template or create a blank task.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+              onClick={() => handlePickTemplate(null)}
+            >
+              <Plus className="h-4 w-4 text-slate-400" />
+              <div>
+                <p className="text-sm font-medium text-slate-900">Blank task</p>
+                <p className="text-xs text-slate-500">Start with an empty form</p>
+              </div>
+            </button>
+
+            {boardTemplates.length > 0 ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Board templates
+                </p>
+                <div className="space-y-2">
+                  {boardTemplates.map((tpl) => (
+                    <div key={tpl.id} className="group flex items-center gap-2">
+                      {editingTemplateId === tpl.id ? (
+                        <div className="flex-1 space-y-2 rounded-lg border border-slate-200 p-3">
+                          <Input
+                            value={editTemplateName}
+                            onChange={(e) => setEditTemplateName(e.target.value)}
+                            placeholder="Template name"
+                            className="text-sm"
+                          />
+                          <Input
+                            value={editTemplateTitleTpl}
+                            onChange={(e) => setEditTemplateTitleTpl(e.target.value)}
+                            placeholder="Title template"
+                            className="text-sm"
+                          />
+                          <Textarea
+                            value={editTemplateDescTpl}
+                            onChange={(e) => setEditTemplateDescTpl(e.target.value)}
+                            placeholder="Description template"
+                            className="min-h-[60px] text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleUpdateTemplate(tpl.id)}>
+                              Save
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingTemplateId(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex flex-1 items-center gap-3 rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+                            onClick={() => handlePickTemplate(tpl)}
+                          >
+                            <Copy className="h-4 w-4 shrink-0 text-slate-400" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-900">{tpl.name}</p>
+                              {tpl.description_template ? (
+                                <p className="truncate text-xs text-slate-500">
+                                  {tpl.description_template.slice(0, 80)}
+                                  {tpl.description_template.length > 80 ? "…" : ""}
+                                </p>
+                              ) : null}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-600 group-hover:opacity-100"
+                            title="Edit template"
+                            onClick={() => {
+                              setEditingTemplateId(tpl.id);
+                              setEditTemplateName(tpl.name);
+                              setEditTemplateTitleTpl(tpl.title_template);
+                              setEditTemplateDescTpl(tpl.description_template ?? "");
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"
+                            title="Delete template"
+                            onClick={() => handleDeleteTemplate(tpl.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {orgTemplates.length > 0 ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Organization templates
+                </p>
+                <div className="space-y-2">
+                  {orgTemplates.map((tpl) => (
+                    <div key={tpl.id} className="group flex items-center gap-2">
+                      {editingTemplateId === tpl.id ? (
+                        <div className="flex-1 space-y-2 rounded-lg border border-slate-200 p-3">
+                          <Input
+                            value={editTemplateName}
+                            onChange={(e) => setEditTemplateName(e.target.value)}
+                            placeholder="Template name"
+                            className="text-sm"
+                          />
+                          <Input
+                            value={editTemplateTitleTpl}
+                            onChange={(e) => setEditTemplateTitleTpl(e.target.value)}
+                            placeholder="Title template"
+                            className="text-sm"
+                          />
+                          <Textarea
+                            value={editTemplateDescTpl}
+                            onChange={(e) => setEditTemplateDescTpl(e.target.value)}
+                            placeholder="Description template"
+                            className="min-h-[60px] text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleUpdateTemplate(tpl.id)}>
+                              Save
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingTemplateId(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex flex-1 items-center gap-3 rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+                            onClick={() => handlePickTemplate(tpl)}
+                          >
+                            <Copy className="h-4 w-4 shrink-0 text-slate-400" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-900">{tpl.name}</p>
+                              {tpl.description_template ? (
+                                <p className="truncate text-xs text-slate-500">
+                                  {tpl.description_template.slice(0, 80)}
+                                  {tpl.description_template.length > 80 ? "…" : ""}
+                                </p>
+                              ) : null}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-600 group-hover:opacity-100"
+                            title="Edit template"
+                            onClick={() => {
+                              setEditingTemplateId(tpl.id);
+                              setEditTemplateName(tpl.name);
+                              setEditTemplateTitleTpl(tpl.title_template);
+                              setEditTemplateDescTpl(tpl.description_template ?? "");
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"
+                            title="Delete template"
+                            onClick={() => handleDeleteTemplate(tpl.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Save as template dialog ── */}
+      <Dialog
+        open={isSaveTemplateOpen}
+        onOpenChange={(nextOpen) => {
+          setIsSaveTemplateOpen(nextOpen);
+          if (!nextOpen) {
+            setSaveTemplateError(null);
+          }
+        }}
+      >
+        <DialogContent aria-label="Save as template">
+          <DialogHeader>
+            <DialogTitle>Save as template</DialogTitle>
+            <DialogDescription>
+              Create a reusable template from this task.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-strong">Name</label>
+              <Input
+                value={saveTemplateName}
+                onChange={(e) => setSaveTemplateName(e.target.value)}
+                placeholder="Template name"
+                disabled={isSavingTemplate}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-strong">Title template</label>
+              <Input
+                value={saveTemplateTitle}
+                onChange={(e) => setSaveTemplateTitle(e.target.value)}
+                placeholder="Pre-filled title"
+                disabled={isSavingTemplate}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-strong">Description template</label>
+              <Textarea
+                value={saveTemplateDesc}
+                onChange={(e) => setSaveTemplateDesc(e.target.value)}
+                placeholder="Pre-filled description / prompt"
+                className="min-h-[120px]"
+                disabled={isSavingTemplate}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="tpl-org-wide"
+                checked={saveTemplateOrgWide}
+                onChange={(e) => setSaveTemplateOrgWide(e.target.checked)}
+                disabled={isSavingTemplate}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <label htmlFor="tpl-org-wide" className="text-sm text-slate-700">
+                Available on all boards (organization-wide)
+              </label>
+            </div>
+            {saveTemplateError ? (
+              <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-3 text-xs text-muted">
+                {saveTemplateError}
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSaveTemplateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveAsTemplate} disabled={isSavingTemplate}>
+              {isSavingTemplate ? "Saving…" : "Save template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {toasts.length ? (
         <div className="fixed bottom-6 right-6 z-[60] flex w-[320px] max-w-[90vw] flex-col gap-3">
