@@ -35,6 +35,7 @@ services:
       DB_AUTO_MIGRATE: ${DB_AUTO_MIGRATE:-true}
       AUTH_MODE: ${AUTH_MODE}
       LOCAL_AUTH_TOKEN: ${LOCAL_AUTH_TOKEN}
+      BASE_URL: ${BASE_URL:-http://100.91.10.124:8000}
       RQ_REDIS_URL: redis://localhost:6379/0
     volumes:
       - device_keys:/app/app/services/openclaw/.device-keys
