@@ -40,6 +40,9 @@ def _to_pipeline_read(pipeline: BoardTaskPipeline) -> BoardTaskPipelineRead:
         task_title_template=pipeline.task_title_template,
         task_description_template=pipeline.task_description_template,
         target_agent_id=pipeline.target_agent_id,
+        transfer_files=pipeline.transfer_files,
+        notify_agent=pipeline.notify_agent,
+        notification_template=pipeline.notification_template,
         created_at=pipeline.created_at,
         updated_at=pipeline.updated_at,
     )
@@ -88,6 +91,9 @@ async def create_board_pipeline(
         task_title_template=payload.task_title_template,
         task_description_template=payload.task_description_template,
         target_agent_id=payload.target_agent_id,
+        transfer_files=payload.transfer_files,
+        notify_agent=payload.notify_agent,
+        notification_template=payload.notification_template,
     )
     session.add(pipeline)
     await session.commit()

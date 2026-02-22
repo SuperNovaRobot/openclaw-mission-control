@@ -59,6 +59,9 @@ type PipelineRead = {
   task_title_template: string;
   task_description_template: string | null;
   target_agent_id: string | null;
+  transfer_files: boolean;
+  notify_agent: boolean;
+  notification_template: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -609,6 +612,23 @@ export default function EditBoardPage() {
     useState("");
   const [pipelineTargetAgentId, setPipelineTargetAgentId] =
     useState(LEAD_AGENT_VALUE);
+  const [pipelineTransferFiles, setPipelineTransferFiles] = useState(false);
+  const [pipelineNotifyAgent, setPipelineNotifyAgent] = useState(false);
+  const [pipelineNotificationTemplate, setPipelineNotificationTemplate] =
+    useState("");
+  const [editingPipelineId, setEditingPipelineId] = useState<string | null>(
+    null,
+  );
+  const [editPipelineData, setEditPipelineData] = useState<{
+    target_board_id: string;
+    trigger_status: string;
+    task_title_template: string;
+    task_description_template: string;
+    target_agent_id: string;
+    transfer_files: boolean;
+    notify_agent: boolean;
+    notification_template: string;
+  } | null>(null);
 
   const allBoardsQuery = useListBoardsApiV1BoardsGet<
     listBoardsApiV1BoardsGetResponse,
@@ -648,6 +668,9 @@ export default function EditBoardPage() {
       task_description_template: string | null;
       target_agent_id: string | null;
       enabled: boolean;
+      transfer_files: boolean;
+      notify_agent: boolean;
+      notification_template: string | null;
     }) => {
       return customFetch<{ data: PipelineRead; status: number }>(
         `/api/v1/boards/${boardId}/pipelines`,
@@ -660,6 +683,9 @@ export default function EditBoardPage() {
       setPipelineTargetBoardId("");
       setPipelineTriggerStatus("done");
       setPipelineTargetAgentId(LEAD_AGENT_VALUE);
+      setPipelineTransferFiles(false);
+      setPipelineNotifyAgent(false);
+      setPipelineNotificationTemplate("");
       pipelinesQuery.refetch();
     },
     onError: (err: Error) => {
@@ -703,6 +729,38 @@ export default function EditBoardPage() {
     },
   });
 
+  const updatePipelineMutation = useMutation({
+    mutationFn: async ({
+      pipelineId,
+      data,
+    }: {
+      pipelineId: string;
+      data: {
+        target_board_id?: string;
+        trigger_status?: string;
+        task_title_template?: string;
+        task_description_template?: string | null;
+        target_agent_id?: string | null;
+        transfer_files?: boolean;
+        notify_agent?: boolean;
+        notification_template?: string | null;
+      };
+    }) => {
+      return customFetch<{ data: PipelineRead; status: number }>(
+        `/api/v1/boards/${boardId}/pipelines/${pipelineId}`,
+        { method: "PATCH", body: JSON.stringify(data) },
+      );
+    },
+    onSuccess: () => {
+      setEditingPipelineId(null);
+      setEditPipelineData(null);
+      pipelinesQuery.refetch();
+    },
+    onError: (err: Error) => {
+      setPipelineError(err.message || "Unable to update pipeline.");
+    },
+  });
+
   const handleCreatePipeline = () => {
     if (!boardId || !pipelineTargetBoardId) return;
     if (!pipelineTitleTemplate.trim()) {
@@ -720,6 +778,9 @@ export default function EditBoardPage() {
           ? null
           : pipelineTargetAgentId,
       enabled: true,
+      transfer_files: pipelineTransferFiles,
+      notify_agent: pipelineNotifyAgent,
+      notification_template: pipelineNotificationTemplate.trim() || null,
     });
   };
 
@@ -733,6 +794,53 @@ export default function EditBoardPage() {
     if (togglePipelineMutation.isPending) return;
     setPipelineError(null);
     togglePipelineMutation.mutate({ pipelineId, enabled });
+  };
+
+  const handleStartEditPipeline = (pipeline: PipelineRead) => {
+    setEditingPipelineId(pipeline.id);
+    setEditPipelineData({
+      target_board_id: pipeline.target_board_id,
+      trigger_status: pipeline.trigger_status,
+      task_title_template: pipeline.task_title_template,
+      task_description_template: pipeline.task_description_template ?? "",
+      target_agent_id: pipeline.target_agent_id ?? LEAD_AGENT_VALUE,
+      transfer_files: pipeline.transfer_files,
+      notify_agent: pipeline.notify_agent,
+      notification_template: pipeline.notification_template ?? "",
+    });
+    setPipelineError(null);
+  };
+
+  const handleCancelEditPipeline = () => {
+    setEditingPipelineId(null);
+    setEditPipelineData(null);
+  };
+
+  const handleSaveEditPipeline = () => {
+    if (!editingPipelineId || !editPipelineData) return;
+    if (!editPipelineData.task_title_template.trim()) {
+      setPipelineError("Title template is required.");
+      return;
+    }
+    setPipelineError(null);
+    updatePipelineMutation.mutate({
+      pipelineId: editingPipelineId,
+      data: {
+        target_board_id: editPipelineData.target_board_id,
+        trigger_status: editPipelineData.trigger_status,
+        task_title_template: editPipelineData.task_title_template.trim(),
+        task_description_template:
+          editPipelineData.task_description_template.trim() || null,
+        target_agent_id:
+          editPipelineData.target_agent_id === LEAD_AGENT_VALUE
+            ? null
+            : editPipelineData.target_agent_id,
+        transfer_files: editPipelineData.transfer_files,
+        notify_agent: editPipelineData.notify_agent,
+        notification_template:
+          editPipelineData.notification_template.trim() || null,
+      },
+    });
   };
 
   const handleOnboardingConfirmed = (updated: BoardRead) => {
@@ -1527,6 +1635,53 @@ export default function EditBoardPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Handoff Options
+                  </p>
+                  <label className="flex items-center gap-2 text-sm text-slate-900">
+                    <input
+                      type="checkbox"
+                      checked={pipelineTransferFiles}
+                      onChange={(e) =>
+                        setPipelineTransferFiles(e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    Transfer workspace files to target agent
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-900">
+                    <input
+                      type="checkbox"
+                      checked={pipelineNotifyAgent}
+                      onChange={(e) =>
+                        setPipelineNotifyAgent(e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    Send prompt/instructions to target agent
+                  </label>
+                  {pipelineNotifyAgent ? (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-900">
+                        Notification prompt
+                      </label>
+                      <Textarea
+                        value={pipelineNotificationTemplate}
+                        onChange={(e) =>
+                          setPipelineNotificationTemplate(e.target.value)
+                        }
+                        placeholder="e.g. A script has been completed by {{source_task.agent_name}}. Read the files in pipeline-inputs/ and create a video. Task: {{source_task.title}}"
+                        className="min-h-[70px]"
+                        disabled={isLoading}
+                      />
+                      <p className="text-xs text-slate-500">
+                        Same template variables as above. Transferred file list
+                        is appended automatically.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
                 <div className="flex justify-end">
                   <Button
                     type="button"
@@ -1566,6 +1721,236 @@ export default function EditBoardPage() {
                     (b) => b.id === pipeline.target_board_id,
                   );
                   const isSameBoard = pipeline.target_board_id === boardId;
+                  const isEditing = editingPipelineId === pipeline.id;
+
+                  if (isEditing && editPipelineData) {
+                    return (
+                      <div
+                        key={pipeline.id}
+                        className="space-y-3 rounded-lg border-2 border-blue-300 bg-blue-50/30 px-4 py-4"
+                      >
+                        <p className="text-sm font-semibold text-slate-900">
+                          Edit Pipeline
+                        </p>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-900">
+                              Target board
+                            </label>
+                            <Select
+                              value={editPipelineData.target_board_id}
+                              onValueChange={(v) =>
+                                setEditPipelineData({
+                                  ...editPipelineData,
+                                  target_board_id: v,
+                                })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select board" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {allBoards.map((b) => (
+                                  <SelectItem key={b.id} value={b.id}>
+                                    {b.name}
+                                    {b.id === boardId ? " (this board)" : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-900">
+                              Trigger when status is
+                            </label>
+                            <Select
+                              value={editPipelineData.trigger_status}
+                              onValueChange={(v) =>
+                                setEditPipelineData({
+                                  ...editPipelineData,
+                                  trigger_status: v,
+                                })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="done">Done</SelectItem>
+                                <SelectItem value="review">Review</SelectItem>
+                                <SelectItem value="in_progress">
+                                  In Progress
+                                </SelectItem>
+                                <SelectItem value="inbox">Inbox</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-900">
+                            New task title template
+                          </label>
+                          <Input
+                            value={editPipelineData.task_title_template}
+                            onChange={(e) =>
+                              setEditPipelineData({
+                                ...editPipelineData,
+                                task_title_template: e.target.value,
+                              })
+                            }
+                            placeholder='e.g. Video: {{source_task.title}}'
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-900">
+                            New task description template
+                          </label>
+                          <Textarea
+                            value={editPipelineData.task_description_template}
+                            onChange={(e) =>
+                              setEditPipelineData({
+                                ...editPipelineData,
+                                task_description_template: e.target.value,
+                              })
+                            }
+                            placeholder="e.g. Create video from completed script.&#10;Source task: {{source_task.title}}&#10;Details: {{source_task.description}}"
+                            className="min-h-[70px]"
+                          />
+                          <p className="text-xs text-slate-500">
+                            Variables:{" "}
+                            <code className="text-xs">
+                              {"{{source_task.title}}"}
+                            </code>
+                            ,{" "}
+                            <code className="text-xs">
+                              {"{{source_task.description}}"}
+                            </code>
+                            ,{" "}
+                            <code className="text-xs">
+                              {"{{source_board.name}}"}
+                            </code>
+                            ,{" "}
+                            <code className="text-xs">
+                              {"{{source_task.agent_name}}"}
+                            </code>
+                            ,{" "}
+                            <code className="text-xs">
+                              {"{{source_task.id}}"}
+                            </code>
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-900">
+                            Assign to agent (optional)
+                          </label>
+                          <Select
+                            value={editPipelineData.target_agent_id}
+                            onValueChange={(v) =>
+                              setEditPipelineData({
+                                ...editPipelineData,
+                                target_agent_id: v,
+                              })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Lead agent (default)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={LEAD_AGENT_VALUE}>
+                                Lead agent (default)
+                              </SelectItem>
+                              {webhookAgents.map((agent) => (
+                                <SelectItem key={agent.id} value={agent.id}>
+                                  {agent.name}
+                                  {agent.is_board_lead ? " (lead)" : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            Handoff Options
+                          </p>
+                          <label className="flex items-center gap-2 text-sm text-slate-900">
+                            <input
+                              type="checkbox"
+                              checked={editPipelineData.transfer_files}
+                              onChange={(e) =>
+                                setEditPipelineData({
+                                  ...editPipelineData,
+                                  transfer_files: e.target.checked,
+                                })
+                              }
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                            Transfer workspace files to target agent
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-slate-900">
+                            <input
+                              type="checkbox"
+                              checked={editPipelineData.notify_agent}
+                              onChange={(e) =>
+                                setEditPipelineData({
+                                  ...editPipelineData,
+                                  notify_agent: e.target.checked,
+                                })
+                              }
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                            Send prompt/instructions to target agent
+                          </label>
+                          {editPipelineData.notify_agent ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-900">
+                                Notification prompt
+                              </label>
+                              <Textarea
+                                value={
+                                  editPipelineData.notification_template
+                                }
+                                onChange={(e) =>
+                                  setEditPipelineData({
+                                    ...editPipelineData,
+                                    notification_template: e.target.value,
+                                  })
+                                }
+                                placeholder="e.g. A script has been completed. Read pipeline-inputs/ and create a video."
+                                className="min-h-[70px]"
+                              />
+                              <p className="text-xs text-slate-500">
+                                Same template variables. Transferred file list
+                                appended automatically.
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={handleCancelEditPipeline}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={handleSaveEditPipeline}
+                            disabled={
+                              updatePipelineMutation.isPending ||
+                              !editPipelineData.target_board_id ||
+                              !editPipelineData.task_title_template.trim()
+                            }
+                          >
+                            {updatePipelineMutation.isPending
+                              ? "Saving…"
+                              : "Save"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       key={pipeline.id}
@@ -1602,6 +1987,13 @@ export default function EditBoardPage() {
                           <Button
                             type="button"
                             variant="ghost"
+                            onClick={() => handleStartEditPipeline(pipeline)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
                             onClick={() =>
                               handleTogglePipeline(
                                 pipeline.id,
@@ -1629,6 +2021,20 @@ export default function EditBoardPage() {
                         <p className="text-xs text-slate-500 line-clamp-2">
                           Description: {pipeline.task_description_template}
                         </p>
+                      ) : null}
+                      {(pipeline.transfer_files || pipeline.notify_agent) ? (
+                        <div className="flex gap-2 pt-1">
+                          {pipeline.transfer_files ? (
+                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                              Files
+                            </span>
+                          ) : null}
+                          {pipeline.notify_agent ? (
+                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
+                              Notify
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                   );

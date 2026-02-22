@@ -17,6 +17,12 @@ DEFAULT_HEARTBEAT_CONFIG: dict[str, Any] = {
     "includeReasoning": False,
 }
 
+# Default LLM model for Mission Control agents.  The gateway's own default
+# (agents.defaults.model.primary) is a different model that may not be suited
+# for board-agent workloads, so we explicitly set this on every provisioned
+# agent to avoid silent failures.
+DEFAULT_AGENT_MODEL = "anthropic/claude-opus-4-6"
+
 OFFLINE_AFTER = timedelta(minutes=10)
 AGENT_SESSION_PREFIX = "agent"
 

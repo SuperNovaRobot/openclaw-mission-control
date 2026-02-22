@@ -26,5 +26,8 @@ class BoardTaskPipeline(QueryModel, table=True):
     task_title_template: str = Field(default="")
     task_description_template: str | None = Field(default=None, sa_type=Text)
     target_agent_id: UUID | None = Field(default=None, foreign_key="agents.id", index=True)
+    transfer_files: bool = Field(default=False)
+    notify_agent: bool = Field(default=False)
+    notification_template: str | None = Field(default=None, sa_type=Text)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

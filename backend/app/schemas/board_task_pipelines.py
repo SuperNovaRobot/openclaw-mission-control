@@ -17,6 +17,9 @@ class BoardTaskPipelineCreate(SQLModel):
     task_description_template: str | None = None
     target_agent_id: UUID | None = None
     enabled: bool = True
+    transfer_files: bool = False
+    notify_agent: bool = False
+    notification_template: str | None = None
 
 
 class BoardTaskPipelineUpdate(SQLModel):
@@ -28,6 +31,9 @@ class BoardTaskPipelineUpdate(SQLModel):
     task_description_template: str | None = None
     target_agent_id: UUID | None = None
     enabled: bool | None = None
+    transfer_files: bool | None = None
+    notify_agent: bool | None = None
+    notification_template: str | None = None
 
 
 class BoardTaskPipelineRead(SQLModel):
@@ -41,5 +47,8 @@ class BoardTaskPipelineRead(SQLModel):
     task_title_template: str
     task_description_template: str | None
     target_agent_id: UUID | None
+    transfer_files: bool
+    notify_agent: bool
+    notification_template: str | None
     created_at: datetime
     updated_at: datetime

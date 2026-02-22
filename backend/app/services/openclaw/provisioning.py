@@ -23,6 +23,7 @@ from app.models.gateways import Gateway
 from app.services import souls_directory
 from app.services.openclaw.constants import (
     BOARD_SHARED_TEMPLATE_MAP,
+    DEFAULT_AGENT_MODEL,
     DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY,
     DEFAULT_GATEWAY_FILES,
     DEFAULT_HEARTBEAT_CONFIG,
@@ -669,6 +670,10 @@ def _updated_agent_list(
         new_entry = dict(raw_entry)
         new_entry["workspace"] = workspace_path
         new_entry["heartbeat"] = heartbeat
+        # Ensure MC-provisioned agents always have an explicit model so they
+        # don't silently fall back to the gateway's default model.
+        if "model" not in new_entry:
+            new_entry["model"] = DEFAULT_AGENT_MODEL
         new_list.append(new_entry)
         updated_ids.add(agent_id)
 
@@ -676,7 +681,12 @@ def _updated_agent_list(
         if agent_id in updated_ids:
             continue
         new_list.append(
-            {"id": agent_id, "workspace": workspace_path, "heartbeat": heartbeat},
+            {
+                "id": agent_id,
+                "workspace": workspace_path,
+                "heartbeat": heartbeat,
+                "model": DEFAULT_AGENT_MODEL,
+            },
         )
 
     return new_list
