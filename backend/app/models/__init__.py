@@ -28,6 +28,7 @@ from app.models.task_custom_fields import (
 )
 from app.models.task_dependencies import TaskDependency
 from app.models.task_fingerprints import TaskFingerprint
+from app.models.task_templates import TaskTemplate
 from app.models.tasks import Task
 from app.models.users import User
 
@@ -59,6 +60,7 @@ __all__ = [
     "TaskDependency",
     "Task",
     "TaskFingerprint",
+    "TaskTemplate",
     "Tag",
     "TagAssignment",
     "User",
