@@ -71,6 +71,7 @@ async def flush_queue(*, block: bool = False, block_timeout: float = 0) -> int:
                 "queue.worker.dequeue_failed",
                 extra={"queue_name": settings.rq_queue_name},
             )
+            await asyncio.sleep(5)
             continue
 
         if task is None:
